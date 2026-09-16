@@ -19,7 +19,7 @@ DMG="$ROOT/build/ShotShelf-$VERSION.dmg"
 git -C "$ROOT" add -A
 git -C "$ROOT" commit -m "ShotShelf $VERSION" || true
 git -C "$ROOT" tag "v$VERSION"
-git -C "$ROOT" push origin HEAD --tags
+git -C "$ROOT" -c credential.helper='!gh auth git-credential' push origin HEAD --tags
 
 gh release create "v$VERSION" "$DMG" "$DMG.sha256" \
   --repo "$REPO" --title "ShotShelf $VERSION" --notes "$NOTES"
