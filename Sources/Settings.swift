@@ -44,14 +44,11 @@ enum DisposeAction: String, CaseIterable, Identifiable {
     }
 }
 
-/// An extra mouse button, or sideways scrolling (e.g. the thumb wheel on a
-/// Logitech MX Master), optionally combined with modifier keys.
+/// An extra mouse button.
 enum MouseTrigger: Codable, Equatable {
     case button(Int)
-    /// `direction` is the sign of `scrollingDeltaX` as recorded (+1 or -1).
+    /// Only read from 1.2 development builds; migrated to the hot corner.
     case sidewaysScroll(direction: Int, modifiers: UInt)
-
-    static let modifierMask: NSEvent.ModifierFlags = [.control, .option, .shift, .command]
 
     var name: String {
         switch self {
@@ -62,22 +59,9 @@ enum MouseTrigger: Codable, Equatable {
             case 4: return "Button 5 (forward)"
             default: return "Button \(number + 1)"
             }
-        case .sidewaysScroll(let direction, let modifiers):
-            let flags = NSEvent.ModifierFlags(rawValue: modifiers)
-            var prefix = ""
-            if flags.contains(.control) { prefix += "⌃" }
-            if flags.contains(.option) { prefix += "⌥" }
-            if flags.contains(.shift) { prefix += "⇧" }
-            if flags.contains(.command) { prefix += "⌘" }
-            return prefix + (direction > 0 ? "Scroll sideways ←" : "Scroll sideways →")
+        case .sidewaysScroll:
+            return "Scroll sideways"
         }
-    }
-
-    /// Sideways scrolling without a modifier also fires while you scroll
-    /// horizontally in other apps.
-    var conflictsWithScrolling: Bool {
-        if case .sidewaysScroll(_, let modifiers) = self { return modifiers == 0 }
-        return false
     }
 }
 
@@ -174,6 +158,7 @@ final class AppSettings: ObservableObject {
         static let closeShelfAction = "CloseShelfAction"
         static let hotCorner = "HotCorner"
         static let hotCornerAction = "HotCornerAction"
+        static let swapScrollDirections = "SwapScrollDirections"
         static let autoCheckUpdates = "AutoCheckUpdates"
     }
 
@@ -234,6 +219,10 @@ final class AppSettings: ObservableObject {
     @Published var hotCornerAction: HotCornerAction {
         didSet { defaults.set(hotCornerAction.rawValue, forKey: Key.hotCornerAction) }
     }
+    /// For the hot corner: normally scrolling left shows and right hides.
+    @Published var swapScrollDirections: Bool {
+        didSet { defaults.set(swapScrollDirections, forKey: Key.swapScrollDirections) }
+    }
     @Published var autoCheckUpdates: Bool {
         didSet { defaults.set(autoCheckUpdates, forKey: Key.autoCheckUpdates) }
     }
@@ -261,11 +250,34 @@ final class AppSettings: ObservableObject {
         } else {
             toggleMouseTrigger = nil
         }
-        defaults.removeObject(forKey: Key.mouseButton)
         closeScreenshotAction = defaults.string(forKey: Key.closeScreenshotAction).flatMap(DisposeAction.init(rawValue:)) ?? .save
         closeShelfAction = defaults.string(forKey: Key.closeShelfAction).flatMap(DisposeAction.init(rawValue:)) ?? .save
         hotCorner = defaults.string(forKey: Key.hotCorner).flatMap(ScreenCorner.init(rawValue:))
         hotCornerAction = defaults.string(forKey: Key.hotCornerAction).flatMap(HotCornerAction.init(rawValue:)) ?? .enter
+        swapScrollDirections = defaults.bool(forKey: Key.swapScrollDirections)
         autoCheckUpdates = defaults.bool(forKey: Key.autoCheckUpdates)
+
+        migrate()
+    }
+
+    /// Property observers don't run inside init, so migrations save explicitly.
+    private func migrate() {
+        // 1.1 stored a plain button number.
+        if let button = defaults.object(forKey: Key.mouseButton) as? Int {
+            if defaults.data(forKey: Key.mouseTrigger) == nil {
+                defaults.set(try? JSONEncoder().encode(MouseTrigger.button(button)), forKey: Key.mouseTrigger)
+            }
+            defaults.removeObject(forKey: Key.mouseButton)
+        }
+        // Sideways scrolling used to be a mouse trigger that worked anywhere;
+        // it now only works in the hot corner.
+        if case .sidewaysScroll = toggleMouseTrigger {
+            toggleMouseTrigger = nil
+            hotCorner = hotCorner ?? .bottomRight
+            hotCornerAction = .horizontalScroll
+            defaults.removeObject(forKey: Key.mouseTrigger)
+            defaults.set(hotCorner?.rawValue, forKey: Key.hotCorner)
+            defaults.set(hotCornerAction.rawValue, forKey: Key.hotCornerAction)
+        }
     }
 }

@@ -44,12 +44,18 @@ final class GlobalHotKey {
 }
 
 /// Every way to show or hide the shelf: a keyboard shortcut, an extra mouse
-/// button, and a hot corner (move the pointer in, or scroll sideways there, as
-/// with the thumb wheel on a Logitech mouse).
+/// button, and a hot corner. In the hot corner you either move the pointer in
+/// (toggles), or scroll sideways there, e.g. with the thumb wheel on a Logitech
+/// mouse: scrolling left shows the shelf, scrolling right hides it. Sideways
+/// scrolling anywhere else is left alone.
 final class ToggleTriggers {
     static let shared = ToggleTriggers()
 
     var onToggle: () -> Void = {}
+    var onShow: () -> Void = {}
+    var onHide: () -> Void = {}
+    /// Where the pointer is; replaceable so the corner logic can be tested.
+    var pointerLocation: () -> NSPoint = { NSEvent.mouseLocation }
 
     private let settings = AppSettings.shared
     private var hotKey: GlobalHotKey?
@@ -57,6 +63,8 @@ final class ToggleTriggers {
     private var cornerTimer: Timer?
     private var cornerArmed = true
     private var scrollAccumulated: CGFloat = 0
+    private var scrollDirection: CGFloat = 0
+    private var lastScrollEvent = Date.distantPast
     private var lastFired = Date.distantPast
     private var suspended = false
     private var cancellable: AnyCancellable?
@@ -86,21 +94,14 @@ final class ToggleTriggers {
 
         if let shortcut = settings.toggleShortcut {
             hotKey = GlobalHotKey(keyCode: shortcut.keyCode, modifiers: shortcut.carbonModifiers) { [weak self] in
-                self?.fire()
+                self?.fire(self?.onToggle)
             }
         }
 
-        switch settings.toggleMouseTrigger {
-        case .button(let button):
+        if case .button(let button) = settings.toggleMouseTrigger {
             addMonitors(for: .otherMouseDown) { [weak self] event in
-                if event.buttonNumber == button { self?.fire() }
+                if event.buttonNumber == button { self?.fire(self?.onToggle) }
             }
-        case .sidewaysScroll(let direction, let modifiers):
-            addMonitors(for: .scrollWheel) { [weak self] event in
-                self?.handleSidewaysScroll(event, direction: direction, modifiers: modifiers)
-            }
-        case nil:
-            break
         }
 
         guard let corner = settings.hotCorner else { return }
@@ -111,7 +112,9 @@ final class ToggleTriggers {
             cornerTimer = timer
             cornerArmed = distance(to: corner) > 40 // don't fire right away if the pointer is already there
         case .horizontalScroll:
-            addMonitors(for: .scrollWheel) { [weak self] event in self?.handleScroll(event, corner: corner) }
+            addMonitors(for: .scrollWheel) { [weak self] event in
+                self?.handleCornerScroll(event, corner: corner)
+            }
         }
     }
 
@@ -125,32 +128,10 @@ final class ToggleTriggers {
         }
     }
 
-    private func fire() {
-        guard !suspended, Date().timeIntervalSince(lastFired) > 0.4 else { return }
+    private func fire(_ action: (() -> Void)?, cooldown: TimeInterval = 0.4) {
+        guard !suspended, Date().timeIntervalSince(lastFired) > cooldown else { return }
         lastFired = Date()
-        onToggle()
-    }
-
-    // MARK: - Sideways scroll
-
-    private var sidewaysAccumulated: CGFloat = 0
-    private var lastSidewaysEvent = Date.distantPast
-
-    func handleSidewaysScroll(_ event: NSEvent, direction: Int, modifiers: UInt) {
-        let held = event.modifierFlags.intersection(MouseTrigger.modifierMask).rawValue
-        let dx = event.scrollingDeltaX, dy = event.scrollingDeltaY
-        guard held == modifiers, abs(dx) > abs(dy), (dx > 0 ? 1 : -1) == direction,
-              event.momentumPhase.isEmpty else { return }
-
-        // A pause means a new swipe of the wheel.
-        if Date().timeIntervalSince(lastSidewaysEvent) > 0.3 { sidewaysAccumulated = 0 }
-        lastSidewaysEvent = Date()
-        sidewaysAccumulated += abs(dx)
-
-        let threshold: CGFloat = event.hasPreciseScrollingDeltas ? 30 : 1
-        guard sidewaysAccumulated >= threshold else { return }
-        sidewaysAccumulated = 0
-        if Date().timeIntervalSince(lastFired) > 0.8 { fire() }
+        action?()
     }
 
     // MARK: - Hot corner
@@ -158,7 +139,7 @@ final class ToggleTriggers {
     /// Distance from the pointer to the chosen corner of the screen it is on
     /// (the larger of the horizontal and vertical distance).
     private func distance(to corner: ScreenCorner) -> CGFloat {
-        let p = NSEvent.mouseLocation
+        let p = pointerLocation()
         guard let frame = NSScreen.screens.first(where: { NSMouseInRect(p, $0.frame, false) })?.frame else {
             return .greatestFiniteMagnitude
         }
@@ -171,24 +152,41 @@ final class ToggleTriggers {
         let d = distance(to: corner)
         if d <= 3, cornerArmed {
             cornerArmed = false
-            fire()
+            fire(onToggle)
         } else if d > 40 {
             cornerArmed = true
         }
     }
 
-    private func handleScroll(_ event: NSEvent, corner: ScreenCorner) {
-        guard distance(to: corner) <= 80 else {
+    /// Pixels from the corner that still count as "in the corner" for scrolling.
+    static let cornerScrollZone: CGFloat = 80
+
+    /// Sideways scrolling in the corner: left shows, right hides.
+    func handleCornerScroll(_ event: NSEvent, corner: ScreenCorner) {
+        guard distance(to: corner) <= Self.cornerScrollZone else {
             scrollAccumulated = 0
             return
         }
         let dx = event.scrollingDeltaX, dy = event.scrollingDeltaY
-        guard abs(dx) > abs(dy) else { return }
-        scrollAccumulated += abs(dx)
-        let threshold: CGFloat = event.hasPreciseScrollingDeltas ? 30 : 1
-        if scrollAccumulated >= threshold {
+        guard abs(dx) > abs(dy), dx != 0, event.momentumPhase.isEmpty else { return }
+
+        // Direction as the user moved the wheel or fingers. With natural
+        // scrolling the deltas already follow the fingers; otherwise they are
+        // reversed.
+        var direction: CGFloat = (dx > 0 ? 1 : -1) * (event.isDirectionInvertedFromDevice ? 1 : -1)
+        if settings.swapScrollDirections { direction = -direction }
+
+        // A pause or a change of direction starts a new gesture.
+        if Date().timeIntervalSince(lastScrollEvent) > 0.3 || direction != scrollDirection {
             scrollAccumulated = 0
-            if Date().timeIntervalSince(lastFired) > 0.8 { fire() }
         }
+        lastScrollEvent = Date()
+        scrollDirection = direction
+        scrollAccumulated += abs(dx)
+
+        let threshold: CGFloat = event.hasPreciseScrollingDeltas ? 30 : 1
+        guard scrollAccumulated >= threshold else { return }
+        scrollAccumulated = 0
+        fire(direction > 0 ? onHide : onShow, cooldown: 0.5)
     }
 }

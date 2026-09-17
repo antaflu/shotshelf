@@ -158,11 +158,12 @@ struct ShelfView: View {
                         ShelfTile(item: item, store: store, settings: settings)
                     }
                 }
+                // The gaps between screenshots live inside the scroll view.
+                .background(selectionCanvas)
             }
         }
         .padding(ShelfLayout.pad)
-        .contentShape(Rectangle())
-        .onTapGesture { store.clearSelection() }
+        .background(selectionCanvas)
     }
 
     private var header: some View {
@@ -192,6 +193,10 @@ struct ShelfView: View {
         .frame(height: ShelfLayout.headerHeight)
         .contentShape(Rectangle())
         .gesture(swipe)
+    }
+
+    private var selectionCanvas: some View {
+        SelectionCanvas(onClick: { store.clearSelection() }, selection: store.paintSelection)
     }
 
     private var headerTitle: String {
@@ -228,8 +233,9 @@ struct ShelfView: View {
     }
 }
 
-/// One screenshot on the expanded shelf: draggable into any app, ⌘-click to
-/// select several, and quick actions on hover.
+/// One screenshot on the expanded shelf: draggable into any app, ⌘-click or
+/// hold-and-move to select several, double-click to open in Preview, and quick
+/// actions on hover.
 private struct ShelfTile: View {
     let item: ShelfItem
     @ObservedObject var store: ShelfStore
@@ -270,6 +276,7 @@ private struct ShelfTile: View {
                     onClick: { flags in
                         if flags.contains(.command) { store.toggleSelection(item) } else { store.clearSelection() }
                     },
+                    onDoubleClick: { store.openInPreview([item]) },
                     onHover: { hovering = $0 },
                     passesThrough: { point, size in
                         guard hovering else { return false }
@@ -278,7 +285,9 @@ private struct ShelfTile: View {
                         let inClose = point.x >= size.width - Self.closeSize
                             && point.y >= size.height - Self.closeSize
                         return inBar || inClose
-                    })
+                    },
+                    itemID: item.id,
+                    selection: store.paintSelection)
             )
             .overlay(alignment: .topTrailing) {
                 if hovering { closeButton }

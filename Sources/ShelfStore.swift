@@ -58,6 +58,16 @@ final class ShelfStore: ObservableObject {
         if !selection.isEmpty { selection.removeAll() }
     }
 
+    /// Selecting by moving over screenshots with the button held.
+    var paintSelection: PaintSelection {
+        PaintSelection(
+            began: { [weak self] additive in if !additive { self?.clearSelection() } },
+            paint: { [weak self] id in
+                guard let self, !self.selection.contains(id) else { return }
+                self.selection.insert(id)
+            })
+    }
+
     /// What an action on `item` applies to: the whole selection if the item is
     /// part of it, otherwise just the item.
     func targets(for item: ShelfItem) -> [ShelfItem] {

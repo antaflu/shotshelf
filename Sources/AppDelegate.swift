@@ -24,6 +24,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         controller.onOpenSettings = { [weak self] in self?.openSettings() }
         ToggleTriggers.shared.onToggle = { [weak self] in self?.controller.toggle() }
+        ToggleTriggers.shared.onShow = { [weak self] in self?.controller.show(allowEmpty: true) }
+        ToggleTriggers.shared.onHide = { [weak self] in self?.controller.hide() }
         ToggleTriggers.shared.start()
 
         watcher.onNewScreenshot = { [weak self] url in self?.handleNewScreenshot(url) }

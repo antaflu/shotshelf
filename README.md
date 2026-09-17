@@ -30,8 +30,10 @@ Requires macOS 13 or later. Universal build (Apple silicon and Intel).
 
 - **Drag the stack** to take all screenshots along at once.
 - **Drag a single screenshot** from the expanded shelf.
-- **⌘-click** screenshots on the expanded shelf to select several; dragging
-  or any action on one of them then applies to the whole selection.
+- **Select several** on the expanded shelf: ⌘-click them, or press on empty
+  space (or press and hold a screenshot briefly) and move over the ones you
+  want. Dragging or any action on a selected screenshot applies to all of them.
+- **Double-click** a screenshot to open it in Preview.
 - **Hover** a screenshot for quick actions: copy it again, open it in
   Preview (edits show up on the shelf), or move it to the Trash. The × saves
   it to your folder, or trashes it if you prefer (see Settings).
@@ -53,10 +55,11 @@ icons turned off.
   screenshot or the whole shelf saves or trashes. Quitting always saves.
 - **Shelf:** which corner it appears in. It grows away from that corner and
   swipes off towards the nearest side.
-- **Show and Hide:** a keyboard shortcut, an extra mouse button or sideways
-  scroll (the thumb wheel on a Logitech MX Master, optionally with a modifier
-  key), and/or a hot corner (move the pointer in, or scroll sideways there, e.g. with the thumb
-  wheel of a Logitech mouse). Hiding saves nothing; screenshots stay on the
+- **Show and Hide:** a keyboard shortcut, an extra mouse button, and/or a hot
+  corner. In the hot corner, either move the pointer in, or scroll sideways
+  (e.g. with the thumb wheel of a Logitech MX Master): left shows the shelf,
+  right hides it, with an option to swap. Sideways scrolling elsewhere is
+  ignored. Hiding saves nothing; screenshots stay on the
   shelf. Turn off the macOS hot corner for the same corner.
 - **Appearance:** menu bar and/or Dock icon, and which icon.
 - **Updates:** current version, status, and automatic checking and
