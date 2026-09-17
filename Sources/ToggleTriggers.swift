@@ -159,7 +159,7 @@ final class ToggleTriggers {
     }
 
     /// Pixels from the corner that still count as "in the corner" for scrolling.
-    static let cornerScrollZone: CGFloat = 80
+    static let cornerScrollZone: CGFloat = 210
 
     /// Sideways scrolling in the corner: left shows, right hides.
     func handleCornerScroll(_ event: NSEvent, corner: ScreenCorner) {
