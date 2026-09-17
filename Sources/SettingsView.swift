@@ -69,6 +69,7 @@ struct SettingsView: View {
                         get: { settings.anchorCorner },
                         set: { if let corner = $0 { settings.anchorCorner = corner } }))
                 }
+                Toggle("Show when dragging images to its corner", isOn: $settings.revealOnDrag)
                 Toggle("Turn off the macOS preview thumbnail", isOn: $settings.hideSystemPreview)
                 Text("The floating macOS thumbnail delays the shelf by a few seconds.")
                     .font(.caption).foregroundColor(.secondary)
@@ -91,7 +92,10 @@ struct SettingsView: View {
                     Picker("Trigger", selection: $settings.hotCornerAction) {
                         ForEach(HotCornerAction.allCases) { Text($0.label).tag($0) }
                     }
-                    if settings.hotCornerAction == .horizontalScroll {
+                    if settings.hotCornerAction == .scroll {
+                        Picker("Scroll or swipe", selection: $settings.swipeAxis) {
+                            ForEach(SwipeAxis.allCases) { Text($0.label).tag($0) }
+                        }
                         Toggle("Swap directions", isOn: $settings.swapScrollDirections)
                     }
                     Text(hotCornerHint)
@@ -142,10 +146,21 @@ struct SettingsView: View {
         switch settings.hotCornerAction {
         case .enter:
             return "Turn off the macOS hot corner for this corner (System Settings › Desktop & Dock › Hot Corners), otherwise both will fire."
-        case .horizontalScroll:
-            let show = settings.swapScrollDirections ? "right" : "left"
-            let hide = settings.swapScrollDirections ? "left" : "right"
-            return "With the pointer in the corner, scroll \(show) to show the shelf and \(hide) to hide it, for example with the thumb wheel on a Logitech mouse. Sideways scrolling anywhere else is ignored. Wrong way round? Turn on Swap directions."
+        case .scroll:
+            let swap = settings.swapScrollDirections
+            let show: String, hide: String, examples: String
+            switch settings.swipeAxis {
+            case .horizontal:
+                (show, hide) = swap ? ("right", "left") : ("left", "right")
+                examples = "the thumb wheel on a Logitech MX Master, or a one-finger swipe on a Magic Mouse"
+            case .vertical:
+                (show, hide) = swap ? ("down", "up") : ("up", "down")
+                examples = "a scroll wheel, or a one-finger swipe on a Magic Mouse"
+            case .both:
+                (show, hide) = swap ? ("right or down", "left or up") : ("left or up", "right or down")
+                examples = "any wheel, a Magic Mouse or a trackpad"
+            }
+            return "With the pointer within 210 pt of the corner, scroll or swipe \(show) to show the shelf and \(hide) to hide it, for example with \(examples). Scrolling anywhere else is ignored. Wrong way round? Turn on Swap directions."
         }
     }
 

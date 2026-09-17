@@ -76,18 +76,28 @@ struct MarqueeSelection {
     }
 }
 
+/// A clickable area drawn by SwiftUI on top of a tile, e.g. the Copy button.
+/// `rect` is in the tile's own (bottom-left origin) coordinates.
+struct Hotspot: Equatable {
+    let id: String
+    let rect: NSRect
+}
+
 /// Invisible drag area over a screenshot or the stack.
 ///
-/// - Press and move: drags the screenshot(s) into another app.
+/// - Press and move: drags the screenshot(s) into another app, even when the
+///   press lands on one of the buttons drawn on top.
 /// - Press, hold still briefly, then move: draws a selection rectangle.
-/// - Click, ⌘-click and double-click are reported back.
+/// - Clicks on a hotspot trigger that button; other clicks, ⌘-clicks and
+///   double-clicks are reported back.
 final class DragOutNSView: NSView, NSDraggingSource {
     var items: () -> [(url: URL, image: NSImage)] = { [] }
     var onClick: (NSEvent.ModifierFlags) -> Void = { _ in }
     var onDoubleClick: () -> Void = {}
     var onHover: (Bool) -> Void = { _ in }
-    /// Points (in this view) where SwiftUI buttons drawn on top should get the click.
-    var passesThrough: (NSPoint, NSSize) -> Bool = { _, _ in false }
+    var hotspots: (NSSize) -> [Hotspot] = { _ in [] }
+    var onHotspotClick: (String) -> Void = { _ in }
+    var onHotspotHover: (String?) -> Void = { _ in }
     /// Set for screenshot tiles; nil for the stack, which can't be selected.
     var itemID: UUID? {
         didSet { if itemID != nil { TileRegistry.shared.register(self) } }
@@ -104,10 +114,9 @@ final class DragOutNSView: NSView, NSDraggingSource {
     /// The panel is never active; without this the first click would only focus it.
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        guard let hit = super.hitTest(point) else { return nil }
-        let local = convert(point, from: superview)
-        return passesThrough(local, bounds.size) ? nil : hit
+    private func hotspot(at windowPoint: NSPoint) -> String? {
+        let point = convert(windowPoint, from: nil)
+        return hotspots(bounds.size).first { $0.rect.contains(point) }?.id
     }
 
     override func updateTrackingAreas() {
@@ -115,13 +124,24 @@ final class DragOutNSView: NSView, NSDraggingSource {
         trackingAreas.forEach(removeTrackingArea)
         addTrackingArea(NSTrackingArea(
             rect: .zero,
-            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
             owner: self))
     }
 
     // Passing over tiles while dragging or selecting shouldn't pop up their buttons.
-    override func mouseEntered(with event: NSEvent) { onHover(NSEvent.pressedMouseButtons == 0) }
-    override func mouseExited(with event: NSEvent) { onHover(false) }
+    override func mouseEntered(with event: NSEvent) {
+        onHover(NSEvent.pressedMouseButtons == 0)
+        onHotspotHover(hotspot(at: event.locationInWindow))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        onHotspotHover(hotspot(at: event.locationInWindow))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        onHover(false)
+        onHotspotHover(nil)
+    }
 
     override func mouseDown(with event: NSEvent) {
         mouseDownAt = event.locationInWindow
@@ -164,7 +184,14 @@ final class DragOutNSView: NSView, NSDraggingSource {
         holdTimer?.invalidate()
         if mode == .selecting { selection.ended() }
         if mode == .pending {
-            if event.clickCount >= 2 { onDoubleClick() } else { onClick(event.modifierFlags) }
+            if let spot = hotspot(at: event.locationInWindow) {
+                // The second click of a double-click shouldn't run the action again.
+                if event.clickCount == 1 { onHotspotClick(spot) }
+            } else if event.clickCount >= 2 {
+                onDoubleClick()
+            } else {
+                onClick(event.modifierFlags)
+            }
         }
         mode = .pending
     }
@@ -197,7 +224,9 @@ struct DragOutArea: NSViewRepresentable {
     var onClick: (NSEvent.ModifierFlags) -> Void
     var onDoubleClick: () -> Void = {}
     var onHover: (Bool) -> Void = { _ in }
-    var passesThrough: (NSPoint, NSSize) -> Bool = { _, _ in false }
+    var hotspots: (NSSize) -> [Hotspot] = { _ in [] }
+    var onHotspotClick: (String) -> Void = { _ in }
+    var onHotspotHover: (String?) -> Void = { _ in }
     var itemID: UUID?
     var selection = MarqueeSelection()
 
@@ -212,7 +241,9 @@ struct DragOutArea: NSViewRepresentable {
         view.onClick = onClick
         view.onDoubleClick = onDoubleClick
         view.onHover = onHover
-        view.passesThrough = passesThrough
+        view.hotspots = hotspots
+        view.onHotspotClick = onHotspotClick
+        view.onHotspotHover = onHotspotHover
         view.itemID = itemID
         view.selection = selection
     }

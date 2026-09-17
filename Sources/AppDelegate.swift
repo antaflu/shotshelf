@@ -31,6 +31,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         watcher.onNewScreenshot = { [weak self] url in self?.handleNewScreenshot(url) }
         // Screenshots left over from a previous session go back on the shelf.
         for url in watcher.existingFiles() { controller.store.add(url) }
+        // So are images that were dropped onto the shelf.
+        let dropped = (try? FileManager.default.contentsOfDirectory(
+            at: ShelfStore.droppedURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        for url in dropped.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) { controller.store.add(url) }
         watcher.start()
         if !controller.store.isEmpty { controller.show() }
 

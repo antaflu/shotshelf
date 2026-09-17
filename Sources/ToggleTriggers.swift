@@ -45,9 +45,9 @@ final class GlobalHotKey {
 
 /// Every way to show or hide the shelf: a keyboard shortcut, an extra mouse
 /// button, and a hot corner. In the hot corner you either move the pointer in
-/// (toggles), or scroll sideways there, e.g. with the thumb wheel on a Logitech
-/// mouse: scrolling left shows the shelf, scrolling right hides it. Sideways
-/// scrolling anywhere else is left alone.
+/// (toggles), or scroll or swipe there: left or up shows the shelf, right or
+/// down hides it. That covers a scroll wheel, the thumb wheel on a Logitech
+/// MX Master, a Magic Mouse and a trackpad. Scrolling elsewhere is left alone.
 final class ToggleTriggers {
     static let shared = ToggleTriggers()
 
@@ -111,7 +111,7 @@ final class ToggleTriggers {
             RunLoop.main.add(timer, forMode: .common)
             cornerTimer = timer
             cornerArmed = distance(to: corner) > 40 // don't fire right away if the pointer is already there
-        case .horizontalScroll:
+        case .scroll:
             addMonitors(for: .scrollWheel) { [weak self] event in
                 self?.handleCornerScroll(event, corner: corner)
             }
@@ -161,19 +161,27 @@ final class ToggleTriggers {
     /// Pixels from the corner that still count as "in the corner" for scrolling.
     static let cornerScrollZone: CGFloat = 210
 
-    /// Sideways scrolling in the corner: left shows, right hides.
+    /// Scrolling or swiping in the corner: left or up shows, right or down hides.
     func handleCornerScroll(_ event: NSEvent, corner: ScreenCorner) {
         guard distance(to: corner) <= Self.cornerScrollZone else {
             scrollAccumulated = 0
             return
         }
+        guard event.momentumPhase.isEmpty else { return }
         let dx = event.scrollingDeltaX, dy = event.scrollingDeltaY
-        guard abs(dx) > abs(dy), dx != 0, event.momentumPhase.isEmpty else { return }
+        let isHorizontal = abs(dx) > abs(dy)
+        let amount: CGFloat
+        switch settings.swipeAxis {
+        case .horizontal: guard isHorizontal else { return }; amount = dx
+        case .vertical: guard !isHorizontal else { return }; amount = dy
+        case .both: amount = isHorizontal ? dx : dy
+        }
+        guard amount != 0 else { return }
 
-        // Direction as the user moved the wheel or fingers. With natural
-        // scrolling the deltas already follow the fingers; otherwise they are
-        // reversed.
-        var direction: CGFloat = (dx > 0 ? 1 : -1) * (event.isDirectionInvertedFromDevice ? 1 : -1)
+        // Direction as the user moved the wheel or fingers (+1 = right or down).
+        // With natural scrolling the deltas already follow the fingers;
+        // otherwise they are reversed.
+        var direction: CGFloat = (amount > 0 ? 1 : -1) * (event.isDirectionInvertedFromDevice ? 1 : -1)
         if settings.swapScrollDirections { direction = -direction }
 
         // A pause or a change of direction starts a new gesture.
@@ -182,7 +190,7 @@ final class ToggleTriggers {
         }
         lastScrollEvent = Date()
         scrollDirection = direction
-        scrollAccumulated += abs(dx)
+        scrollAccumulated += abs(amount)
 
         let threshold: CGFloat = event.hasPreciseScrollingDeltas ? 30 : 1
         guard scrollAccumulated >= threshold else { return }

@@ -7,22 +7,36 @@ struct ShelfItem: Identifiable, Equatable {
     var url: URL
     var thumbnail: NSImage
     var modified: Date?
+    /// A file you dragged in from somewhere on disk. ShotShelf only points to
+    /// it: closing or trashing just takes it off the shelf, the original stays.
+    var isReference = false
 
     static func == (a: ShelfItem, b: ShelfItem) -> Bool { a.id == b.id }
 }
 
-/// Holds the screenshots currently on the shelf and moves them to the save
-/// folder.
+/// Holds the screenshots and images currently on the shelf, and saves or
+/// trashes the ones ShotShelf owns.
 final class ShelfStore: ObservableObject {
     @Published private(set) var items: [ShelfItem] = []
     @Published var expanded: Bool = false
     @Published var hovering: Bool = false
+    /// True while something droppable is dragged over the shelf.
+    @Published var dropTargeted: Bool = false
     /// Screenshots selected with ⌘-click on the expanded shelf.
     @Published var selection: Set<UUID> = []
 
     static let stagingURL: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let dir = base.appendingPathComponent("ShotShelf/Staging", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }()
+
+    /// Images dropped onto the shelf without a file of their own (e.g. from a
+    /// browser) are written here. Not watched, so they don't touch the clipboard.
+    static let droppedURL: URL = {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let dir = base.appendingPathComponent("ShotShelf/Dropped", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }()
@@ -39,10 +53,12 @@ final class ShelfStore: ObservableObject {
     // MARK: - Adding
 
     @discardableResult
-    func add(_ url: URL) -> Bool {
-        guard !items.contains(where: { $0.url == url }) else { return false }
+    func add(_ url: URL, isReference: Bool = false) -> Bool {
+        let url = url.standardizedFileURL
+        guard !items.contains(where: { $0.url.standardizedFileURL == url }) else { return false }
         guard let thumb = ShelfStore.thumbnail(for: url) else { return false }
-        items.append(ShelfItem(url: url, thumbnail: thumb, modified: ShelfStore.modificationDate(of: url)))
+        items.append(ShelfItem(url: url, thumbnail: thumb, modified: ShelfStore.modificationDate(of: url),
+                               isReference: isReference))
         return true
     }
 
@@ -89,7 +105,7 @@ final class ShelfStore: ObservableObject {
     // MARK: - Getting rid of screenshots (saved, or moved to the Trash)
 
     /// Saves everything to the save folder and empties the shelf. Used on quit,
-    /// so it never trashes anything.
+    /// so it never trashes anything. Dragged-in files are just let go.
     func flushAll() {
         dispose(items, action: .save)
     }
@@ -97,7 +113,7 @@ final class ShelfStore: ObservableObject {
     /// Takes screenshots off the shelf. Files that could not be saved or trashed
     /// stay on the shelf, so nothing is ever lost by accident.
     func dispose(_ targets: [ShelfItem], action: DisposeAction) {
-        let failed = Set(targets.filter { !ShelfStore.dispose($0.url, action: action) }.map(\.id))
+        let failed = Set(targets.filter { !$0.isReference && !ShelfStore.dispose($0.url, action: action) }.map(\.id))
         let removed = Set(targets.map(\.id)).subtracting(failed)
         items.removeAll { removed.contains($0.id) }
         selection.subtract(removed)

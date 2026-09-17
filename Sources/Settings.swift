@@ -20,13 +20,29 @@ enum ScreenCorner: String, CaseIterable, Identifiable {
 }
 
 enum HotCornerAction: String, CaseIterable, Identifiable {
-    case enter, horizontalScroll
+    // The raw value predates vertical swipes; kept so settings still load.
+    case enter, scroll = "horizontalScroll"
 
     var id: String { rawValue }
     var label: String {
         switch self {
         case .enter: return "Move pointer into corner"
-        case .horizontalScroll: return "Scroll sideways in corner"
+        case .scroll: return "Scroll or swipe in corner"
+        }
+    }
+}
+
+/// Which scroll or swipe in the hot corner shows and hides the shelf. Works
+/// with a scroll wheel, the MX Master thumb wheel, a Magic Mouse and a trackpad.
+enum SwipeAxis: String, CaseIterable, Identifiable {
+    case horizontal, vertical, both
+
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .horizontal: return "Sideways"
+        case .vertical: return "Up and down"
+        case .both: return "Either"
         }
     }
 }
@@ -159,6 +175,8 @@ final class AppSettings: ObservableObject {
         static let hotCorner = "HotCorner"
         static let hotCornerAction = "HotCornerAction"
         static let swapScrollDirections = "SwapScrollDirections"
+        static let swipeAxis = "SwipeAxis"
+        static let revealOnDrag = "RevealOnDrag"
         static let autoCheckUpdates = "AutoCheckUpdates"
     }
 
@@ -223,6 +241,13 @@ final class AppSettings: ObservableObject {
     @Published var swapScrollDirections: Bool {
         didSet { defaults.set(swapScrollDirections, forKey: Key.swapScrollDirections) }
     }
+    @Published var swipeAxis: SwipeAxis {
+        didSet { defaults.set(swipeAxis.rawValue, forKey: Key.swipeAxis) }
+    }
+    /// Show the shelf when you drag images or files towards its corner.
+    @Published var revealOnDrag: Bool {
+        didSet { defaults.set(revealOnDrag, forKey: Key.revealOnDrag) }
+    }
     @Published var autoCheckUpdates: Bool {
         didSet { defaults.set(autoCheckUpdates, forKey: Key.autoCheckUpdates) }
     }
@@ -233,6 +258,7 @@ final class AppSettings: ObservableObject {
             Key.showMenuBarIcon: true,
             Key.hideSystemPreview: true,
             Key.autoCheckUpdates: true,
+            Key.revealOnDrag: true,
         ])
         saveFolder = defaults.string(forKey: Key.saveFolder).map { URL(fileURLWithPath: $0, isDirectory: true) }
             ?? AppSettings.desktopURL
@@ -255,6 +281,8 @@ final class AppSettings: ObservableObject {
         hotCorner = defaults.string(forKey: Key.hotCorner).flatMap(ScreenCorner.init(rawValue:))
         hotCornerAction = defaults.string(forKey: Key.hotCornerAction).flatMap(HotCornerAction.init(rawValue:)) ?? .enter
         swapScrollDirections = defaults.bool(forKey: Key.swapScrollDirections)
+        swipeAxis = defaults.string(forKey: Key.swipeAxis).flatMap(SwipeAxis.init(rawValue:)) ?? .horizontal
+        revealOnDrag = defaults.bool(forKey: Key.revealOnDrag)
         autoCheckUpdates = defaults.bool(forKey: Key.autoCheckUpdates)
 
         migrate()
@@ -274,7 +302,7 @@ final class AppSettings: ObservableObject {
         if case .sidewaysScroll = toggleMouseTrigger {
             toggleMouseTrigger = nil
             hotCorner = hotCorner ?? .bottomRight
-            hotCornerAction = .horizontalScroll
+            hotCornerAction = .scroll
             defaults.removeObject(forKey: Key.mouseTrigger)
             defaults.set(hotCorner?.rawValue, forKey: Key.hotCorner)
             defaults.set(hotCornerAction.rawValue, forKey: Key.hotCornerAction)

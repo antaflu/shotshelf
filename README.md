@@ -34,9 +34,16 @@ Requires macOS 13 or later. Universal build (Apple silicon and Intel).
   Finder-style selection rectangle from empty space (or after briefly holding
   a screenshot). Hold ⌘ to add to the current selection. Dragging or any action on a selected screenshot applies to all of them.
 - **Double-click** a screenshot to open it in Preview.
-- **Hover** a screenshot for quick actions: copy it again, open it in
-  Preview (edits show up on the shelf), or move it to the Trash. The × saves
-  it to your folder, or trashes it if you prefer (see Settings).
+- **Hover** a screenshot for quick actions: **Copy** and **View** (open in
+  Preview; edits show up on the shelf) in the middle, **Delete** (to the Trash)
+  in the bottom-left corner. The × saves it to your folder, or trashes it if
+  you prefer (see Settings). You can start a drag anywhere, even on a button.
+- **Drop images onto the shelf** to keep them there for a while. Drag them
+  towards the shelf's corner and it comes out by itself. Files from disk are
+  only referenced: closing or deleting them just takes them off the shelf, the
+  original stays put. Images without a file (e.g. from a browser) are saved
+  like screenshots.
+- **Collapse** the expanded shelf by clicking its title.
 
 Dragged screenshots are offered both as a file and as plain image data, so
 Finder, chat apps and editors all accept them. Dragging always copies; the
@@ -56,10 +63,10 @@ icons turned off.
 - **Shelf:** which corner it appears in. It grows away from that corner and
   swipes off towards the nearest side.
 - **Show and Hide:** a keyboard shortcut, an extra mouse button, and/or a hot
-  corner. In the hot corner, either move the pointer in, or scroll sideways
-  (e.g. with the thumb wheel of a Logitech MX Master): left shows the shelf,
-  right hides it, with an option to swap. Sideways scrolling elsewhere is
-  ignored. Hiding saves nothing; screenshots stay on the
+  corner. In the hot corner, either move the pointer in, or scroll or swipe
+  within 210 pt of it: sideways, up and down, or either (MX Master thumb wheel,
+  Magic Mouse, trackpad). Left or up shows the shelf, right or down hides it,
+  with an option to swap. Scrolling elsewhere is ignored. Hiding saves nothing; screenshots stay on the
   shelf. Turn off the macOS hot corner for the same corner.
 - **Appearance:** menu bar and/or Dock icon, and which icon.
 - **Updates:** current version, status, and automatic checking and

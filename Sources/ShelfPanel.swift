@@ -21,6 +21,10 @@ final class ShelfController {
     /// An empty shelf only stays up when you summoned it yourself (shortcut or hot corner).
     private var allowEmpty = false
     private let margin: CGFloat = 20
+    private let revealWatcher = DragRevealWatcher()
+    /// The shelf came out because something was dragged to its corner.
+    private var revealedForDrop = false
+    private var droppedDuringReveal = false
 
     init() {
         store.objectWillChange
@@ -32,6 +36,29 @@ final class ShelfController {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.layout(animated: true) }
             .store(in: &cancellables)
+
+        revealWatcher.onReveal = { [weak self] in self?.revealForDrop() }
+        revealWatcher.onDragEnded = { [weak self] in self?.dragRevealEnded() }
+        revealWatcher.start()
+    }
+
+    // MARK: - Dropping onto the shelf
+
+    private func revealForDrop() {
+        guard !isVisible else { return }
+        revealedForDrop = true
+        droppedDuringReveal = false
+        show(allowEmpty: true)
+    }
+
+    /// Nothing dropped? Put the shelf away again, just as it was.
+    private func dragRevealEnded() {
+        guard revealedForDrop else { return }
+        revealedForDrop = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self, !self.droppedDuringReveal, self.isVisible else { return }
+            self.hide()
+        }
     }
 
     var isVisible: Bool { panel?.isVisible ?? false }
@@ -177,7 +204,9 @@ final class ShelfController {
             onDragEnded: { [weak self] in self?.dragEnded() })
         let hosting = NSHostingView(rootView: root)
         hosting.frame = NSRect(origin: .zero, size: ShelfLayout.collapsed)
-        panel.contentView = hosting
+        let dropView = ShelfDropView(store: store, content: hosting)
+        dropView.onDropAccepted = { [weak self] in self?.droppedDuringReveal = true }
+        panel.contentView = dropView
 
         self.panel = panel
         return panel

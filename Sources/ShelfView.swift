@@ -87,6 +87,12 @@ struct ShelfView: View {
             }
         }
         .overlay(MarqueeView(rect: store.marquee))
+        .overlay(
+            RoundedRectangle(cornerRadius: ShelfLayout.corner, style: .continuous)
+                .strokeBorder(Color.accentColor, lineWidth: store.dropTargeted ? 3 : 0)
+                .allowsHitTesting(false)
+        )
+        .animation(.easeOut(duration: 0.12), value: store.dropTargeted)
         .background(HoverTracker { inside in
             store.hovering = inside
             if inside { store.refreshThumbnails() } // picks up edits made in Preview
@@ -149,9 +155,16 @@ struct ShelfView: View {
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 34, height: 34)
                 .foregroundColor(.secondary)
-            Text("No screenshots yet")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(.secondary)
+            VStack(spacing: 2) {
+                Text(store.dropTargeted ? "Drop to keep it here" : "No screenshots yet")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.secondary)
+                if !store.dropTargeted {
+                    Text("Drag images here")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary.opacity(0.7))
+                }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
@@ -189,22 +202,24 @@ struct ShelfView: View {
 
     private var header: some View {
         HStack(spacing: 6) {
+            // The chevron and the title are one button, so collapsing is an easy target.
             Button {
                 store.clearSelection()
                 withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) { store.expanded = false }
             } label: {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(.secondary)
-                    .frame(width: 18, height: 18)
-                    .contentShape(Rectangle())
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .bold))
+                        .frame(width: 18, height: 18)
+                    Text(headerTitle)
+                        .font(.system(size: 11, weight: .medium))
+                }
+                .foregroundColor(.secondary)
+                .frame(height: ShelfLayout.headerHeight)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help("Collapse")
-
-            Text(headerTitle)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.secondary)
 
             Spacer(minLength: 8)
 
@@ -255,30 +270,78 @@ struct ShelfView: View {
 }
 
 /// One screenshot on the expanded shelf: draggable into any app, ⌘-click or
-/// hold-and-move to select several, double-click to open in Preview, and quick
-/// actions on hover.
+/// drag a rectangle to select several, double-click to open in Preview.
+///
+/// On hover, Copy and View sit large in the middle, Delete in the bottom-left
+/// corner and × in the top-right. They are drawn here but clicked through the
+/// drag area underneath (see `Hotspot`), so a drag can start anywhere.
 private struct ShelfTile: View {
     let item: ShelfItem
     @ObservedObject var store: ShelfStore
     @ObservedObject var settings: AppSettings
     @State private var hovering = false
+    @State private var hoveredSpot: String?
     @State private var justCopied = false
 
-    private static let barWidth: CGFloat = 70
-    private static let barHeight: CGFloat = 22
+    private enum Spot {
+        static let copy = "copy", view = "view", delete = "delete", close = "close"
+    }
+    private static let pillSize = CGSize(width: 66, height: 22)
+    private static let pillGap: CGFloat = 4
     private static let inset: CGFloat = 4
-    private static let closeSize: CGFloat = 22
+    private static let deleteSize: CGFloat = 20
+    private static let closeSize: CGFloat = 14
 
     private var selected: Bool { store.isSelected(item) }
     /// Actions apply to the whole selection when this screenshot is part of it.
     private var targets: [ShelfItem] { store.targets(for: item) }
+    private var canDelete: Bool { !item.isReference }
 
     private func describe(_ verb: String) -> String {
-        targets.count > 1 ? "\(verb) \(targets.count) screenshots" : verb
+        targets.count > 1 ? "\(verb) \(targets.count) items" : verb
+    }
+
+    /// Where the buttons are, in the tile's bottom-left-origin coordinates.
+    private func hotspots(in size: NSSize) -> [Hotspot] {
+        guard hovering else { return [] }
+        let pill = Self.pillSize, gap = Self.pillGap / 2
+        var spots = [
+            Hotspot(id: Spot.copy, rect: NSRect(x: size.width / 2 - pill.width / 2, y: size.height / 2 + gap,
+                                                width: pill.width, height: pill.height)),
+            Hotspot(id: Spot.view, rect: NSRect(x: size.width / 2 - pill.width / 2, y: size.height / 2 - gap - pill.height,
+                                                width: pill.width, height: pill.height)),
+            Hotspot(id: Spot.close, rect: NSRect(x: size.width - 22, y: size.height - 22, width: 22, height: 22)),
+        ]
+        if canDelete {
+            spots.append(Hotspot(id: Spot.delete, rect: NSRect(x: 2, y: 2, width: Self.deleteSize + 4,
+                                                               height: Self.deleteSize + 4)))
+        }
+        return spots
+    }
+
+    private func perform(_ spot: String) {
+        switch spot {
+        case Spot.copy:
+            store.copy(targets)
+            justCopied = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { justCopied = false }
+        case Spot.view:
+            store.openInPreview(targets)
+        case Spot.delete:
+            store.dispose(targets, action: .trash)
+        case Spot.close:
+            store.dispose(targets, action: settings.closeScreenshotAction)
+        default:
+            break
+        }
     }
 
     var body: some View {
         Thumbnail(image: item.thumbnail, side: ShelfLayout.tile, mode: .fit)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.black.opacity(hovering ? 0.32 : 0))
+            )
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(Color.accentColor, lineWidth: selected ? 2.5 : 0)
@@ -291,6 +354,21 @@ private struct ShelfTile: View {
                         .padding(Self.inset)
                 }
             }
+            .overlay {
+                if hovering {
+                    VStack(spacing: Self.pillGap) {
+                        pill(symbol: justCopied ? "checkmark" : "doc.on.doc",
+                             title: justCopied ? "Copied" : "Copy", spot: Spot.copy)
+                        pill(symbol: "eye", title: "View", spot: Spot.view)
+                    }
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                if hovering { closeMark }
+            }
+            .overlay(alignment: .bottomLeading) {
+                if hovering && canDelete { deleteMark }
+            }
             .overlay(
                 DragOutArea(
                     items: { targets.map { (url: $0.url, image: $0.thumbnail) } },
@@ -299,83 +377,62 @@ private struct ShelfTile: View {
                     },
                     onDoubleClick: { store.openInPreview([item]) },
                     onHover: { hovering = $0 },
-                    passesThrough: { point, size in
-                        guard hovering else { return false }
-                        let inBar = point.y <= Self.inset + Self.barHeight
-                            && abs(point.x - size.width / 2) <= Self.barWidth / 2
-                        let inClose = point.x >= size.width - Self.closeSize
-                            && point.y >= size.height - Self.closeSize
-                        return inBar || inClose
-                    },
+                    hotspots: { hotspots(in: $0) },
+                    onHotspotClick: { perform($0) },
+                    onHotspotHover: { hoveredSpot = $0 },
                     itemID: item.id,
                     selection: store.marqueeSelection)
             )
-            .overlay(alignment: .topTrailing) {
-                if hovering { closeButton }
-            }
-            .overlay(alignment: .bottom) {
-                if hovering { actionBar }
-            }
             .animation(.easeOut(duration: 0.12), value: hovering)
-            .help(item.url.lastPathComponent)
+            .help(helpText)
     }
 
-    private var closeButton: some View {
-        Button {
-            store.dispose(targets, action: settings.closeScreenshotAction)
-        } label: {
-            Image(systemName: "xmark")
-                .font(.system(size: 7, weight: .bold))
-                .foregroundColor(.white)
-                .frame(width: 14, height: 14)
-                .background(Circle().fill(Color.black.opacity(0.6)))
-                .contentShape(Circle())
+    private var helpText: String {
+        switch hoveredSpot {
+        case Spot.copy?: return describe("Copy")
+        case Spot.view?: return describe("Open in Preview")
+        case Spot.delete?: return describe("Move to Trash")
+        case Spot.close?:
+            if item.isReference { return "Remove from shelf (the original stays where it is)" }
+            return settings.closeScreenshotAction == .trash
+                ? describe("Move to Trash")
+                : describe("Save to \(settings.saveFolder.lastPathComponent)")
+        default:
+            return item.isReference ? "\(item.url.lastPathComponent) — \(item.url.deletingLastPathComponent().path)"
+                                    : item.url.lastPathComponent
         }
-        .buttonStyle(.plain)
-        .padding(Self.inset)
-        .help(settings.closeScreenshotAction == .trash
-              ? describe("Move to Trash")
-              : describe("Save to \(settings.saveFolder.lastPathComponent)"))
     }
 
-    private var actionBar: some View {
-        HStack(spacing: 0) {
-            QuickAction(symbol: justCopied ? "checkmark" : "doc.on.doc", help: describe("Copy")) {
-                store.copy(targets)
-                justCopied = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { justCopied = false }
-            }
-            QuickAction(symbol: "eye", help: describe("Open in Preview")) {
-                store.openInPreview(targets)
-            }
-            QuickAction(symbol: "trash", help: describe("Move to Trash")) {
-                store.dispose(targets, action: .trash)
-            }
-        }
-        .frame(width: Self.barWidth, height: Self.barHeight)
-        .background(Capsule().fill(Color.black.opacity(0.62)))
-        .overlay(Capsule().strokeBorder(Color.white.opacity(0.15), lineWidth: 0.5))
-        .padding(.bottom, Self.inset)
-    }
-}
-
-private struct QuickAction: View {
-    let symbol: String
-    let help: String
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
+    private func pill(symbol: String, title: String, spot: String) -> some View {
+        HStack(spacing: 5) {
             Image(systemName: symbol)
-                .font(.system(size: 9.5, weight: .semibold))
-                .foregroundColor(.white.opacity(hovering ? 1 : 0.82))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
+                .font(.system(size: 10, weight: .semibold))
+                .frame(width: 13)
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
         }
-        .buttonStyle(.plain)
-        .background(HoverTracker { hovering = $0 })
-        .help(help)
+        .foregroundColor(.white)
+        .frame(width: Self.pillSize.width, height: Self.pillSize.height)
+        .background(Capsule().fill(hoveredSpot == spot ? Color.accentColor : Color.black.opacity(0.62)))
+        .overlay(Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5))
+    }
+
+    private var closeMark: some View {
+        Image(systemName: "xmark")
+            .font(.system(size: 7, weight: .bold))
+            .foregroundColor(.white)
+            .frame(width: Self.closeSize, height: Self.closeSize)
+            .background(Circle().fill(hoveredSpot == Spot.close ? Color.accentColor : Color.black.opacity(0.6)))
+            .padding(Self.inset)
+    }
+
+    private var deleteMark: some View {
+        Image(systemName: "trash")
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundColor(.white)
+            .frame(width: Self.deleteSize, height: Self.deleteSize)
+            .background(Circle().fill(hoveredSpot == Spot.delete ? Color.red.opacity(0.85) : Color.black.opacity(0.6)))
+            .padding(Self.inset)
     }
 }
 
