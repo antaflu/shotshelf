@@ -19,6 +19,26 @@ enum ShelfLayout {
     }
 }
 
+/// The Finder-style selection rectangle. `rect` is in window coordinates;
+/// the shelf view fills the whole window, so only the y axis needs flipping.
+private struct MarqueeView: View {
+    let rect: NSRect?
+
+    var body: some View {
+        GeometryReader { geometry in
+            if let rect {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(Color.white.opacity(0.14))
+                    .overlay(RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.55), lineWidth: 1))
+                    .frame(width: rect.width, height: rect.height)
+                    .position(x: rect.midX, y: geometry.size.height - rect.midY)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
 /// The native macOS glass material behind the shelf.
 struct GlassBackground: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
@@ -66,6 +86,7 @@ struct ShelfView: View {
                 collapsedContent
             }
         }
+        .overlay(MarqueeView(rect: store.marquee))
         .background(HoverTracker { inside in
             store.hovering = inside
             if inside { store.refreshThumbnails() } // picks up edits made in Preview
@@ -196,7 +217,7 @@ struct ShelfView: View {
     }
 
     private var selectionCanvas: some View {
-        SelectionCanvas(onClick: { store.clearSelection() }, selection: store.paintSelection)
+        SelectionCanvas(onClick: { store.clearSelection() }, selection: store.marqueeSelection)
     }
 
     private var headerTitle: String {
@@ -287,7 +308,7 @@ private struct ShelfTile: View {
                         return inBar || inClose
                     },
                     itemID: item.id,
-                    selection: store.paintSelection)
+                    selection: store.marqueeSelection)
             )
             .overlay(alignment: .topTrailing) {
                 if hovering { closeButton }

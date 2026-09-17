@@ -30,9 +30,9 @@ Requires macOS 13 or later. Universal build (Apple silicon and Intel).
 
 - **Drag the stack** to take all screenshots along at once.
 - **Drag a single screenshot** from the expanded shelf.
-- **Select several** on the expanded shelf: ⌘-click them, or press on empty
-  space (or press and hold a screenshot briefly) and move over the ones you
-  want. Dragging or any action on a selected screenshot applies to all of them.
+- **Select several** on the expanded shelf: ⌘-click them, or drag a
+  Finder-style selection rectangle from empty space (or after briefly holding
+  a screenshot). Hold ⌘ to add to the current selection. Dragging or any action on a selected screenshot applies to all of them.
 - **Double-click** a screenshot to open it in Preview.
 - **Hover** a screenshot for quick actions: copy it again, open it in
   Preview (edits show up on the shelf), or move it to the Trash. The × saves

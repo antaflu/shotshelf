@@ -44,35 +44,42 @@ final class TileRegistry {
 
     func register(_ tile: DragOutNSView) { tiles.add(tile) }
 
-    func item(at windowPoint: NSPoint, in window: NSWindow?) -> UUID? {
-        guard let window else { return nil }
-        return tiles.allObjects.first { tile in
-            guard tile.window === window, tile.itemID != nil, !tile.isHiddenOrHasHiddenAncestor else { return false }
+    /// Screenshots whose visible tile touches `windowRect`.
+    func items(intersecting windowRect: NSRect, in window: NSWindow?) -> Set<UUID> {
+        guard let window else { return [] }
+        return Set(tiles.allObjects.compactMap { tile -> UUID? in
+            guard tile.window === window, let id = tile.itemID, !tile.isHiddenOrHasHiddenAncestor else { return nil }
             // The visible part only, so tiles scrolled out of view don't count.
             // (visibleRect is unreliable for views hosted inside SwiftUI.)
             var frame = tile.convert(tile.bounds, to: nil)
             if let clip = tile.enclosingScrollView?.contentView {
                 frame = frame.intersection(clip.convert(clip.bounds, to: nil))
             }
-            return frame.contains(windowPoint)
-        }?.itemID
+            return frame.intersects(windowRect) ? id : nil
+        })
     }
 }
 
-/// Callbacks for selecting screenshots by moving over them with the button held.
-struct PaintSelection {
+/// A Finder-style selection rectangle, in window coordinates.
+struct MarqueeSelection {
     var began: (_ additive: Bool) -> Void = { _ in }
-    var paint: (UUID) -> Void = { _ in }
+    var changed: (_ rect: NSRect, _ hits: Set<UUID>) -> Void = { _, _ in }
+    var ended: () -> Void = {}
 
-    func paint(_ event: NSEvent) {
-        if let id = TileRegistry.shared.item(at: event.locationInWindow, in: event.window) { paint(id) }
+    /// Updates the rectangle between the press point and the pointer.
+    func update(from start: NSPoint, to event: NSEvent) {
+        let end = event.locationInWindow
+        // At least 1 pt, so the tile you pressed on counts before you move.
+        let rect = NSRect(x: min(start.x, end.x), y: min(start.y, end.y),
+                          width: max(1, abs(end.x - start.x)), height: max(1, abs(end.y - start.y)))
+        changed(rect, TileRegistry.shared.items(intersecting: rect, in: event.window))
     }
 }
 
 /// Invisible drag area over a screenshot or the stack.
 ///
 /// - Press and move: drags the screenshot(s) into another app.
-/// - Press, hold still briefly, then move: selects every screenshot you pass over.
+/// - Press, hold still briefly, then move: draws a selection rectangle.
 /// - Click, ⌘-click and double-click are reported back.
 final class DragOutNSView: NSView, NSDraggingSource {
     var items: () -> [(url: URL, image: NSImage)] = { [] }
@@ -85,7 +92,7 @@ final class DragOutNSView: NSView, NSDraggingSource {
     var itemID: UUID? {
         didSet { if itemID != nil { TileRegistry.shared.register(self) } }
     }
-    var selection = PaintSelection()
+    var selection = MarqueeSelection()
 
     static let holdToSelectDelay: TimeInterval = 0.35
 
@@ -123,18 +130,18 @@ final class DragOutNSView: NSView, NSDraggingSource {
         guard itemID != nil else { return }
         let additive = event.modifierFlags.contains(.command)
         let timer = Timer(timeInterval: Self.holdToSelectDelay, repeats: false) { [weak self] _ in
-            self?.beginSelecting(additive: additive)
+            self?.beginSelecting(additive: additive, event: event)
         }
         RunLoop.main.add(timer, forMode: .common)
         holdTimer = timer
     }
 
-    private func beginSelecting(additive: Bool) {
-        guard mode == .pending, let itemID else { return }
+    private func beginSelecting(additive: Bool, event: NSEvent) {
+        guard mode == .pending, itemID != nil else { return }
         mode = .selecting
         onHover(false)
         selection.began(additive)
-        selection.paint(itemID)
+        selection.update(from: mouseDownAt, to: event)
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -147,7 +154,7 @@ final class DragOutNSView: NSView, NSDraggingSource {
             mode = .dragging
             beginDrag(with: event)
         case .selecting:
-            selection.paint(event)
+            selection.update(from: mouseDownAt, to: event)
         case .dragging:
             break
         }
@@ -155,6 +162,7 @@ final class DragOutNSView: NSView, NSDraggingSource {
 
     override func mouseUp(with event: NSEvent) {
         holdTimer?.invalidate()
+        if mode == .selecting { selection.ended() }
         if mode == .pending {
             if event.clickCount >= 2 { onDoubleClick() } else { onClick(event.modifierFlags) }
         }
@@ -191,7 +199,7 @@ struct DragOutArea: NSViewRepresentable {
     var onHover: (Bool) -> Void = { _ in }
     var passesThrough: (NSPoint, NSSize) -> Bool = { _, _ in false }
     var itemID: UUID?
-    var selection = PaintSelection()
+    var selection = MarqueeSelection()
 
     func makeNSView(context: Context) -> DragOutNSView {
         let view = DragOutNSView()
@@ -211,10 +219,10 @@ struct DragOutArea: NSViewRepresentable {
 }
 
 /// Empty space on the expanded shelf: a click clears the selection, pressing
-/// and moving selects every screenshot you pass over.
+/// and moving draws a selection rectangle.
 final class SelectionCanvasNSView: NSView {
     var onClick: () -> Void = {}
-    var selection = PaintSelection()
+    var selection = MarqueeSelection()
     private var mouseDownAt: NSPoint = .zero
     private var selecting = false
 
@@ -233,18 +241,18 @@ final class SelectionCanvasNSView: NSView {
             selecting = true
             selection.began(event.modifierFlags.contains(.command))
         }
-        selection.paint(event)
+        selection.update(from: mouseDownAt, to: event)
     }
 
     override func mouseUp(with event: NSEvent) {
-        if !selecting { onClick() }
+        if selecting { selection.ended() } else { onClick() }
         selecting = false
     }
 }
 
 struct SelectionCanvas: NSViewRepresentable {
     var onClick: () -> Void
-    var selection: PaintSelection
+    var selection: MarqueeSelection
 
     func makeNSView(context: Context) -> SelectionCanvasNSView {
         let view = SelectionCanvasNSView()

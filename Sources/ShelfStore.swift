@@ -58,14 +58,25 @@ final class ShelfStore: ObservableObject {
         if !selection.isEmpty { selection.removeAll() }
     }
 
-    /// Selecting by moving over screenshots with the button held.
-    var paintSelection: PaintSelection {
-        PaintSelection(
-            began: { [weak self] additive in if !additive { self?.clearSelection() } },
-            paint: { [weak self] id in
-                guard let self, !self.selection.contains(id) else { return }
-                self.selection.insert(id)
-            })
+    /// The selection rectangle being drawn, in window coordinates.
+    @Published private(set) var marquee: NSRect?
+    private var selectionBeforeMarquee: Set<UUID> = []
+
+    /// Like Finder: screenshots inside the rectangle are selected, and drop out
+    /// again when the rectangle shrinks. With ⌘ they add to what was selected.
+    var marqueeSelection: MarqueeSelection {
+        MarqueeSelection(
+            began: { [weak self] additive in
+                guard let self else { return }
+                self.selectionBeforeMarquee = additive ? self.selection : []
+            },
+            changed: { [weak self] rect, hits in
+                guard let self else { return }
+                self.marquee = rect
+                let updated = self.selectionBeforeMarquee.union(hits)
+                if updated != self.selection { self.selection = updated }
+            },
+            ended: { [weak self] in self?.marquee = nil })
     }
 
     /// What an action on `item` applies to: the whole selection if the item is
