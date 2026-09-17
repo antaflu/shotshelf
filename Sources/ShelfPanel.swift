@@ -18,6 +18,10 @@ final class ShelfController {
     private var cancellables = Set<AnyCancellable>()
     private var dragOrigin: NSPoint?
     private var dragStartMouse: NSPoint?
+    /// While the shelf slides away, layout must not pull it back into place.
+    private var slidingOut = false
+    /// Where the pointer is; replaceable for testing.
+    var pointerLocation: () -> NSPoint = { NSEvent.mouseLocation }
     /// An empty shelf only stays up when you summoned it yourself (shortcut or hot corner).
     private var allowEmpty = false
     private let margin: CGFloat = 20
@@ -31,8 +35,8 @@ final class ShelfController {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.layout(animated: true) }
             .store(in: &cancellables)
-        settings.$anchorCorner
-            .dropFirst()
+        Publishers.Merge(settings.$anchorCorner.map { _ in () }, settings.$thumbnailSize.map { _ in () })
+            .dropFirst(2)
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.layout(animated: true) }
             .store(in: &cancellables)
@@ -61,7 +65,8 @@ final class ShelfController {
         }
     }
 
-    var isVisible: Bool { panel?.isVisible ?? false }
+    /// Showing, and not on its way out.
+    var isVisible: Bool { (panel?.isVisible ?? false) && !slidingOut }
 
     private var corner: ScreenCorner { settings.anchorCorner }
     /// +1 when the shelf slides off to the right, −1 for a left-hand corner.
@@ -74,16 +79,24 @@ final class ShelfController {
         guard !store.isEmpty || self.allowEmpty else { return }
         let panel = self.panel ?? makePanel()
 
-        if panel.isVisible {
+        if isVisible {
             layout(animated: true)
             return
         }
 
+        // Coming back while still sliding away: reverse from where it is now.
+        let reversing = slidingOut
+        if reversing {
+            slideGeneration += 1
+            slidingOut = false
+        }
         store.hovering = false
         let target = targetFrame(for: panel)
-        panel.setFrame(target.offsetBy(dx: awayDirection * (target.width + 40), dy: 0), display: false)
-        panel.alphaValue = 0
-        panel.orderFrontRegardless()
+        if !reversing {
+            panel.setFrame(target.offsetBy(dx: awayDirection * (target.width + 40), dy: 0), display: false)
+            panel.alphaValue = 0
+            panel.orderFrontRegardless()
+        }
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.26
             ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
@@ -94,12 +107,13 @@ final class ShelfController {
 
     /// Slides the shelf away without saving anything; the screenshots stay on it.
     func hide() {
-        guard let panel, panel.isVisible else { return }
+        guard let panel, isVisible else { return }
         allowEmpty = false
-        slideOut(panel) { [weak self] in
-            self?.store.expanded = false
-            self?.store.hovering = false
-            self?.store.clearSelection()
+        slideOut(panel) { [weak self] stillHidden in
+            guard stillHidden, let self else { return }
+            self.store.expanded = false
+            self.store.hovering = false
+            self.store.clearSelection()
         }
     }
 
@@ -108,32 +122,46 @@ final class ShelfController {
     }
 
     /// Closes the shelf and saves or trashes everything on it, per Settings.
+    /// Only what was on the shelf when you closed it: a screenshot that arrives
+    /// while the shelf slides away stays.
     func dismiss() {
         allowEmpty = false
-        guard let panel, panel.isVisible else {
-            store.dispose(store.items, action: settings.closeShelfAction)
+        let leaving = store.items
+        guard let panel, isVisible else {
+            store.dispose(leaving, action: settings.closeShelfAction)
             return
         }
-        slideOut(panel) { [weak self] in
+        slideOut(panel) { [weak self] _ in
             guard let self else { return }
             self.store.hovering = false
-            self.store.dispose(self.store.items, action: self.settings.closeShelfAction)
-            // Anything that could not be moved comes back into view.
+            self.store.dispose(leaving, action: self.settings.closeShelfAction)
+            // Anything new, or anything that could not be moved, comes back into view.
             if !self.store.isEmpty { self.show() }
         }
     }
 
-    private func slideOut(_ panel: NSPanel, completion: @escaping () -> Void) {
+    private var slideGeneration = 0
+
+    /// `completion` gets false when the shelf was brought back mid-slide.
+    private func slideOut(_ panel: NSPanel, completion: @escaping (_ stillHidden: Bool) -> Void) {
+        slideGeneration += 1
+        let generation = slideGeneration
+        slidingOut = true
         let away = panel.frame.offsetBy(dx: awayDirection * (panel.frame.width + 60), dy: 0)
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.2
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
             panel.animator().setFrame(away, display: true)
             panel.animator().alphaValue = 0
-        }, completionHandler: {
-            panel.orderOut(nil)
-            panel.alphaValue = 1
-            completion()
+        }, completionHandler: { [weak self] in
+            guard let self else { return }
+            let current = generation == self.slideGeneration
+            if current {
+                panel.orderOut(nil)
+                panel.alphaValue = 1
+                self.slidingOut = false
+            }
+            completion(current)
         })
     }
 
@@ -144,14 +172,14 @@ final class ShelfController {
     /// Positive means towards the nearest screen edge.
     private var dragDistance: CGFloat {
         guard let start = dragStartMouse else { return 0 }
-        return (NSEvent.mouseLocation.x - start.x) * awayDirection
+        return (pointerLocation().x - start.x) * awayDirection
     }
 
     func dragChanged() {
         guard let panel else { return }
         if dragOrigin == nil {
             dragOrigin = panel.frame.origin
-            dragStartMouse = NSEvent.mouseLocation
+            dragStartMouse = pointerLocation()
         }
         guard let base = dragOrigin else { return }
         let offset = max(0, dragDistance)
@@ -230,7 +258,7 @@ final class ShelfController {
     }
 
     private func layout(animated: Bool) {
-        guard let panel, panel.isVisible, dragOrigin == nil else { return }
+        guard let panel, panel.isVisible, dragOrigin == nil, !slidingOut else { return }
         if !store.isEmpty { allowEmpty = false }
         if store.isEmpty && !allowEmpty {
             panel.orderOut(nil)

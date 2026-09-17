@@ -32,6 +32,37 @@ enum HotCornerAction: String, CaseIterable, Identifiable {
     }
 }
 
+/// How big screenshots appear on the shelf. Fixed presets, so the shelf
+/// always stays well proportioned.
+enum ThumbnailSize: String, CaseIterable, Identifiable {
+    case small, medium, large
+
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .small: return "Small"
+        case .medium: return "Medium"
+        case .large: return "Large"
+        }
+    }
+    /// A screenshot on the expanded shelf.
+    var tile: CGFloat {
+        switch self {
+        case .small: return 92
+        case .medium: return 120
+        case .large: return 150
+        }
+    }
+    /// The collapsed shelf (a square).
+    var collapsed: CGFloat {
+        switch self {
+        case .small: return 150
+        case .medium: return 180
+        case .large: return 215
+        }
+    }
+}
+
 /// Which scroll or swipe in the hot corner shows and hides the shelf. Works
 /// with a scroll wheel, the MX Master thumb wheel, a Magic Mouse and a trackpad.
 enum SwipeAxis: String, CaseIterable, Identifiable {
@@ -177,6 +208,7 @@ final class AppSettings: ObservableObject {
         static let swapScrollDirections = "SwapScrollDirections"
         static let swipeAxis = "SwipeAxis"
         static let revealOnDrag = "RevealOnDrag"
+        static let thumbnailSize = "ThumbnailSize"
         static let autoCheckUpdates = "AutoCheckUpdates"
     }
 
@@ -244,6 +276,9 @@ final class AppSettings: ObservableObject {
     @Published var swipeAxis: SwipeAxis {
         didSet { defaults.set(swipeAxis.rawValue, forKey: Key.swipeAxis) }
     }
+    @Published var thumbnailSize: ThumbnailSize {
+        didSet { defaults.set(thumbnailSize.rawValue, forKey: Key.thumbnailSize) }
+    }
     /// Show the shelf when you drag images or files towards its corner.
     @Published var revealOnDrag: Bool {
         didSet { defaults.set(revealOnDrag, forKey: Key.revealOnDrag) }
@@ -283,6 +318,7 @@ final class AppSettings: ObservableObject {
         swapScrollDirections = defaults.bool(forKey: Key.swapScrollDirections)
         swipeAxis = defaults.string(forKey: Key.swipeAxis).flatMap(SwipeAxis.init(rawValue:)) ?? .horizontal
         revealOnDrag = defaults.bool(forKey: Key.revealOnDrag)
+        thumbnailSize = defaults.string(forKey: Key.thumbnailSize).flatMap(ThumbnailSize.init(rawValue:)) ?? .small
         autoCheckUpdates = defaults.bool(forKey: Key.autoCheckUpdates)
 
         migrate()

@@ -1,9 +1,14 @@
 import SwiftUI
 
+/// Shelf measurements. Tile and shelf sizes follow the Thumbnail size setting.
 enum ShelfLayout {
-    static let collapsed = CGSize(width: 150, height: 150)
+    private static var preset: ThumbnailSize { AppSettings.shared.thumbnailSize }
+    static var collapsed: CGSize { CGSize(width: preset.collapsed, height: preset.collapsed) }
     static let corner: CGFloat = 24
-    static let tile: CGFloat = 92
+    static var tile: CGFloat { preset.tile }
+    /// The cards in the collapsed stack, and the area they sit in.
+    static var stackCard: CGFloat { (preset.collapsed * 0.56).rounded() }
+    static var stackArea: CGFloat { (preset.collapsed * 0.64).rounded() }
     static let gap: CGFloat = 10
     static let pad: CGFloat = 16
     static let columns = 3
@@ -89,15 +94,15 @@ struct ShelfView: View {
         .overlay(MarqueeView(rect: store.marquee))
         .overlay(
             RoundedRectangle(cornerRadius: ShelfLayout.corner, style: .continuous)
-                .strokeBorder(Color.accentColor, lineWidth: store.dropTargeted ? 3 : 0)
+                .strokeBorder(Color.white.opacity(store.dropTargeted ? 0.55 : 0), lineWidth: 2)
                 .allowsHitTesting(false)
         )
-        .animation(.easeOut(duration: 0.12), value: store.dropTargeted)
+        .animation(.easeOut(duration: 0.18), value: store.dropTargeted)
         .background(HoverTracker { inside in
             store.hovering = inside
             if inside { store.refreshThumbnails() } // picks up edits made in Preview
         })
-        .animation(.easeOut(duration: 0.16), value: store.hovering)
+        .animation(.easeOut(duration: 0.2), value: store.hovering)
         .clipShape(RoundedRectangle(cornerRadius: ShelfLayout.corner, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: ShelfLayout.corner, style: .continuous)
@@ -113,14 +118,14 @@ struct ShelfView: View {
             ZStack {
                 ForEach(Array(stackPreview.enumerated()), id: \.element.id) { index, item in
                     let depth = Double(stackPreview.count - 1 - index)
-                    Thumbnail(image: item.thumbnail, side: 84, mode: .fill)
+                    Thumbnail(image: item.thumbnail, side: ShelfLayout.stackCard, mode: .fill)
                         .rotationEffect(.degrees(depth * -(4 + 1.5 * fan)))
                         .offset(x: depth * -(3 + 2.5 * fan), y: depth * (3 + 2.5 * fan))
                         .opacity(1.0 - depth * 0.12)
                 }
             }
             .animation(.spring(response: 0.28, dampingFraction: 0.75), value: fan)
-            .frame(width: 96, height: 96)
+            .frame(width: ShelfLayout.stackArea, height: ShelfLayout.stackArea)
             // Drag the whole stack to another app in one go.
             .overlay(
                 DragOutArea(
@@ -273,7 +278,8 @@ struct ShelfView: View {
 /// drag a rectangle to select several, double-click to open in Preview.
 ///
 /// On hover, Copy and View sit large in the middle, Delete in the bottom-left
-/// corner and × in the top-right. They are drawn here but clicked through the
+/// corner and × in the top-right. × only shows when it does something Delete
+/// doesn't: saving to the folder, or letting go of a dragged-in file. They are drawn here but clicked through the
 /// drag area underneath (see `Hotspot`), so a drag can start anywhere.
 private struct ShelfTile: View {
     let item: ShelfItem
@@ -296,6 +302,7 @@ private struct ShelfTile: View {
     /// Actions apply to the whole selection when this screenshot is part of it.
     private var targets: [ShelfItem] { store.targets(for: item) }
     private var canDelete: Bool { !item.isReference }
+    private var showsClose: Bool { item.isReference || settings.closeScreenshotAction == .save }
 
     private func describe(_ verb: String) -> String {
         targets.count > 1 ? "\(verb) \(targets.count) items" : verb
@@ -310,8 +317,10 @@ private struct ShelfTile: View {
                                                 width: pill.width, height: pill.height)),
             Hotspot(id: Spot.view, rect: NSRect(x: size.width / 2 - pill.width / 2, y: size.height / 2 - gap - pill.height,
                                                 width: pill.width, height: pill.height)),
-            Hotspot(id: Spot.close, rect: NSRect(x: size.width - 22, y: size.height - 22, width: 22, height: 22)),
         ]
+        if showsClose {
+            spots.append(Hotspot(id: Spot.close, rect: NSRect(x: size.width - 22, y: size.height - 22, width: 22, height: 22)))
+        }
         if canDelete {
             spots.append(Hotspot(id: Spot.delete, rect: NSRect(x: 2, y: 2, width: Self.deleteSize + 4,
                                                                height: Self.deleteSize + 4)))
@@ -340,34 +349,34 @@ private struct ShelfTile: View {
         Thumbnail(image: item.thumbnail, side: ShelfLayout.tile, mode: .fit)
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.black.opacity(hovering ? 0.32 : 0))
+                    .fill(Color.black.opacity(hovering ? 0.16 : 0))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Color.accentColor, lineWidth: selected ? 2.5 : 0)
+                    .strokeBorder(Color.accentColor, lineWidth: selected ? 2 : 0)
             )
             .overlay(alignment: .topLeading) {
-                if selected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.white, Color.accentColor)
-                        .padding(Self.inset)
-                }
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white, Color.accentColor)
+                    .padding(Self.inset)
+                    .opacity(selected ? 1 : 0)
+                    .scaleEffect(selected ? 1 : 0.7)
             }
+            // The buttons stay in place and fade, so hovering feels soft.
             .overlay {
-                if hovering {
-                    VStack(spacing: Self.pillGap) {
-                        pill(symbol: justCopied ? "checkmark" : "doc.on.doc",
-                             title: justCopied ? "Copied" : "Copy", spot: Spot.copy)
-                        pill(symbol: "eye", title: "View", spot: Spot.view)
-                    }
+                VStack(spacing: Self.pillGap) {
+                    pill(symbol: justCopied ? "checkmark" : "doc.on.doc",
+                         title: justCopied ? "Copied" : "Copy", spot: Spot.copy)
+                    pill(symbol: "eye", title: "View", spot: Spot.view)
                 }
+                .revealed(hovering)
             }
             .overlay(alignment: .topTrailing) {
-                if hovering { closeMark }
+                if showsClose { closeMark.revealed(hovering) }
             }
             .overlay(alignment: .bottomLeading) {
-                if hovering && canDelete { deleteMark }
+                if canDelete { deleteMark.revealed(hovering) }
             }
             .overlay(
                 DragOutArea(
@@ -383,7 +392,9 @@ private struct ShelfTile: View {
                     itemID: item.id,
                     selection: store.marqueeSelection)
             )
-            .animation(.easeOut(duration: 0.12), value: hovering)
+            .animation(.easeOut(duration: 0.18), value: hovering)
+            .animation(.easeOut(duration: 0.15), value: selected)
+            .animation(.easeOut(duration: 0.12), value: hoveredSpot)
             .help(helpText)
     }
 
@@ -413,8 +424,10 @@ private struct ShelfTile: View {
         }
         .foregroundColor(.white)
         .frame(width: Self.pillSize.width, height: Self.pillSize.height)
-        .background(Capsule().fill(hoveredSpot == spot ? Color.accentColor : Color.black.opacity(0.62)))
-        .overlay(Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5))
+        .background(Capsule().fill(Color.black.opacity(0.5)))
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().fill(Color.white.opacity(hoveredSpot == spot ? 0.2 : 0)))
+        .overlay(Capsule().strokeBorder(Color.white.opacity(0.14), lineWidth: 0.5))
     }
 
     private var closeMark: some View {
@@ -422,7 +435,8 @@ private struct ShelfTile: View {
             .font(.system(size: 7, weight: .bold))
             .foregroundColor(.white)
             .frame(width: Self.closeSize, height: Self.closeSize)
-            .background(Circle().fill(hoveredSpot == Spot.close ? Color.accentColor : Color.black.opacity(0.6)))
+            .background(Circle().fill(Color.black.opacity(0.5)))
+            .overlay(Circle().fill(Color.white.opacity(hoveredSpot == Spot.close ? 0.25 : 0)))
             .padding(Self.inset)
     }
 
@@ -431,8 +445,17 @@ private struct ShelfTile: View {
             .font(.system(size: 9, weight: .semibold))
             .foregroundColor(.white)
             .frame(width: Self.deleteSize, height: Self.deleteSize)
-            .background(Circle().fill(hoveredSpot == Spot.delete ? Color.red.opacity(0.85) : Color.black.opacity(0.6)))
+            .background(Circle().fill(Color.black.opacity(0.5)))
+            .overlay(Circle().fill(Color.white.opacity(hoveredSpot == Spot.delete ? 0.25 : 0)))
             .padding(Self.inset)
+    }
+}
+
+private extension View {
+    /// Fades and gently scales a hover control in and out.
+    func revealed(_ visible: Bool) -> some View {
+        opacity(visible ? 1 : 0)
+            .scaleEffect(visible ? 1 : 0.94)
     }
 }
 

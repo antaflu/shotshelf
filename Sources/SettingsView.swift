@@ -59,7 +59,7 @@ struct SettingsView: View {
                 Picker("Closing the shelf", selection: $settings.closeShelfAction) {
                     ForEach(DisposeAction.allCases) { Text($0.label).tag($0) }
                 }
-                Text("Screenshots land in this folder when you close them. Trashed screenshots can still be recovered from the Trash. Quitting ShotShelf always saves.")
+                Text("Screenshots land in this folder when you close them. Trashed screenshots can still be recovered from the Trash. With Move to Trash, screenshots only show the Delete button, since × would do the same. Quitting ShotShelf always saves.")
                     .font(.caption).foregroundColor(.secondary)
             }
 
@@ -69,6 +69,10 @@ struct SettingsView: View {
                         get: { settings.anchorCorner },
                         set: { if let corner = $0 { settings.anchorCorner = corner } }))
                 }
+                Picker("Thumbnail size", selection: $settings.thumbnailSize) {
+                    ForEach(ThumbnailSize.allCases) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.segmented)
                 Toggle("Show when dragging images to its corner", isOn: $settings.revealOnDrag)
                 Toggle("Turn off the macOS preview thumbnail", isOn: $settings.hideSystemPreview)
                 Text("The floating macOS thumbnail delays the shelf by a few seconds.")
