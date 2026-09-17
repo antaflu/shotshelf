@@ -31,6 +31,56 @@ enum HotCornerAction: String, CaseIterable, Identifiable {
     }
 }
 
+/// What happens to screenshots you close without dragging them anywhere.
+enum DisposeAction: String, CaseIterable, Identifiable {
+    case save, trash
+
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .save: return "Save to folder"
+        case .trash: return "Move to Trash"
+        }
+    }
+}
+
+/// An extra mouse button, or sideways scrolling (e.g. the thumb wheel on a
+/// Logitech MX Master), optionally combined with modifier keys.
+enum MouseTrigger: Codable, Equatable {
+    case button(Int)
+    /// `direction` is the sign of `scrollingDeltaX` as recorded (+1 or -1).
+    case sidewaysScroll(direction: Int, modifiers: UInt)
+
+    static let modifierMask: NSEvent.ModifierFlags = [.control, .option, .shift, .command]
+
+    var name: String {
+        switch self {
+        case .button(let number):
+            switch number {
+            case 2: return "Middle button"
+            case 3: return "Button 4 (back)"
+            case 4: return "Button 5 (forward)"
+            default: return "Button \(number + 1)"
+            }
+        case .sidewaysScroll(let direction, let modifiers):
+            let flags = NSEvent.ModifierFlags(rawValue: modifiers)
+            var prefix = ""
+            if flags.contains(.control) { prefix += "⌃" }
+            if flags.contains(.option) { prefix += "⌥" }
+            if flags.contains(.shift) { prefix += "⇧" }
+            if flags.contains(.command) { prefix += "⌘" }
+            return prefix + (direction > 0 ? "Scroll sideways ←" : "Scroll sideways →")
+        }
+    }
+
+    /// Sideways scrolling without a modifier also fires while you scroll
+    /// horizontally in other apps.
+    var conflictsWithScrolling: Bool {
+        if case .sidewaysScroll(_, let modifiers) = self { return modifiers == 0 }
+        return false
+    }
+}
+
 enum IconChoice: String, CaseIterable, Identifiable {
     case stack = "square.stack.3d.up.fill"
     case photos = "photo.stack.fill"
@@ -118,7 +168,10 @@ final class AppSettings: ObservableObject {
         static let hideSystemPreview = "HideSystemPreview"
         static let anchorCorner = "AnchorCorner"
         static let shortcut = "ToggleShortcut"
-        static let mouseButton = "ToggleMouseButton"
+        static let mouseButton = "ToggleMouseButton" // 1.1, migrated to mouseTrigger
+        static let mouseTrigger = "ToggleMouseTrigger"
+        static let closeScreenshotAction = "CloseScreenshotAction"
+        static let closeShelfAction = "CloseShelfAction"
         static let hotCorner = "HotCorner"
         static let hotCornerAction = "HotCornerAction"
         static let autoCheckUpdates = "AutoCheckUpdates"
@@ -158,9 +211,22 @@ final class AppSettings: ObservableObject {
             }
         }
     }
-    /// NSEvent.buttonNumber of an extra mouse button (2 = middle, 3 = back, 4 = forward).
-    @Published var toggleMouseButton: Int? {
-        didSet { defaults.set(toggleMouseButton, forKey: Key.mouseButton) }
+    @Published var toggleMouseTrigger: MouseTrigger? {
+        didSet {
+            if let toggleMouseTrigger, let data = try? JSONEncoder().encode(toggleMouseTrigger) {
+                defaults.set(data, forKey: Key.mouseTrigger)
+            } else {
+                defaults.removeObject(forKey: Key.mouseTrigger)
+            }
+        }
+    }
+    /// The × on a single screenshot, and the trash-free way to get rid of it.
+    @Published var closeScreenshotAction: DisposeAction {
+        didSet { defaults.set(closeScreenshotAction.rawValue, forKey: Key.closeScreenshotAction) }
+    }
+    /// The × on the shelf itself, or swiping it away. Quitting always saves.
+    @Published var closeShelfAction: DisposeAction {
+        didSet { defaults.set(closeShelfAction.rawValue, forKey: Key.closeShelfAction) }
     }
     @Published var hotCorner: ScreenCorner? {
         didSet { defaults.set(hotCorner?.rawValue, forKey: Key.hotCorner) }
@@ -187,18 +253,19 @@ final class AppSettings: ObservableObject {
         hideSystemPreview = defaults.bool(forKey: Key.hideSystemPreview)
         anchorCorner = defaults.string(forKey: Key.anchorCorner).flatMap(ScreenCorner.init(rawValue:)) ?? .bottomRight
         toggleShortcut = defaults.data(forKey: Key.shortcut).flatMap { try? JSONDecoder().decode(KeyShortcut.self, from: $0) }
-        toggleMouseButton = defaults.object(forKey: Key.mouseButton) as? Int
+        if let data = defaults.data(forKey: Key.mouseTrigger),
+           let trigger = try? JSONDecoder().decode(MouseTrigger.self, from: data) {
+            toggleMouseTrigger = trigger
+        } else if let button = defaults.object(forKey: Key.mouseButton) as? Int {
+            toggleMouseTrigger = .button(button)
+        } else {
+            toggleMouseTrigger = nil
+        }
+        defaults.removeObject(forKey: Key.mouseButton)
+        closeScreenshotAction = defaults.string(forKey: Key.closeScreenshotAction).flatMap(DisposeAction.init(rawValue:)) ?? .save
+        closeShelfAction = defaults.string(forKey: Key.closeShelfAction).flatMap(DisposeAction.init(rawValue:)) ?? .save
         hotCorner = defaults.string(forKey: Key.hotCorner).flatMap(ScreenCorner.init(rawValue:))
         hotCornerAction = defaults.string(forKey: Key.hotCornerAction).flatMap(HotCornerAction.init(rawValue:)) ?? .enter
         autoCheckUpdates = defaults.bool(forKey: Key.autoCheckUpdates)
-    }
-
-    static func mouseButtonName(_ number: Int) -> String {
-        switch number {
-        case 2: return "Middle button"
-        case 3: return "Button 4 (back)"
-        case 4: return "Button 5 (forward)"
-        default: return "Button \(number + 1)"
-        }
     }
 }

@@ -53,7 +53,13 @@ struct SettingsView: View {
                         Button("Use Desktop") { settings.saveFolder = AppSettings.desktopURL }
                     }
                 }
-                Text("Screenshots land here when you close the shelf.")
+                Picker("Closing a screenshot (×)", selection: $settings.closeScreenshotAction) {
+                    ForEach(DisposeAction.allCases) { Text($0.label).tag($0) }
+                }
+                Picker("Closing the shelf", selection: $settings.closeShelfAction) {
+                    ForEach(DisposeAction.allCases) { Text($0.label).tag($0) }
+                }
+                Text("Screenshots land in this folder when you close them. Trashed screenshots can still be recovered from the Trash. Quitting ShotShelf always saves.")
                     .font(.caption).foregroundColor(.secondary)
             }
 
@@ -72,8 +78,13 @@ struct SettingsView: View {
                 LabeledContent("Keyboard shortcut") {
                     ShortcutRecorder(shortcut: $settings.toggleShortcut)
                 }
-                LabeledContent("Mouse button") {
-                    MouseButtonRecorder(button: $settings.toggleMouseButton)
+                LabeledContent("Mouse") {
+                    MouseTriggerRecorder(trigger: $settings.toggleMouseTrigger)
+                }
+                if settings.toggleMouseTrigger?.conflictsWithScrolling == true {
+                    Label("This also fires when you scroll sideways in other apps. Hold a key such as ⌥ while recording to avoid that.",
+                          systemImage: "exclamationmark.triangle")
+                        .font(.caption).foregroundColor(.secondary)
                 }
                 Toggle("Hot corner", isOn: Binding(
                     get: { settings.hotCorner != nil },
@@ -256,19 +267,22 @@ struct ShortcutRecorder: View {
     }
 }
 
-struct MouseButtonRecorder: View {
-    @Binding var button: Int?
+/// Records an extra mouse button, or sideways scrolling such as the thumb wheel
+/// on a Logitech MX Master. Modifier keys held while scrolling are recorded too.
+struct MouseTriggerRecorder: View {
+    @Binding var trigger: MouseTrigger?
     @State private var recording = false
     @State private var monitors: [Any] = []
+    @State private var scrollAmount: CGFloat = 0
 
     var body: some View {
         HStack(spacing: 6) {
             Button(action: { recording ? stop() : start() }) {
-                Text(recording ? "Press an extra mouse button…" : (button.map(AppSettings.mouseButtonName) ?? "Record"))
+                Text(recording ? "Press a button or scroll sideways…" : (trigger?.name ?? "Record"))
                     .frame(minWidth: 150)
             }
-            if button != nil && !recording {
-                ClearButton { button = nil }
+            if trigger != nil && !recording {
+                ClearButton { trigger = nil }
             }
         }
         .onDisappear(perform: stop)
@@ -276,16 +290,32 @@ struct MouseButtonRecorder: View {
 
     private func start() {
         recording = true
+        scrollAmount = 0
         ToggleTriggers.shared.setSuspended(true)
-        let capture: (NSEvent) -> Void = { event in
-            button = event.buttonNumber
+
+        let captureButton: (NSEvent) -> Void = { event in
+            trigger = .button(event.buttonNumber)
             stop()
         }
-        if let local = NSEvent.addLocalMonitorForEvents(matching: .otherMouseDown, handler: { capture($0); return nil }) {
-            monitors.append(local)
+        let captureScroll: (NSEvent) -> Void = { event in
+            let dx = event.scrollingDeltaX, dy = event.scrollingDeltaY
+            guard abs(dx) > abs(dy), event.momentumPhase.isEmpty else { return }
+            // Ignore a stray nudge; wait for a deliberate sideways scroll.
+            scrollAmount += abs(dx)
+            guard scrollAmount >= (event.hasPreciseScrollingDeltas ? 20 : 1) else { return }
+            let modifiers = event.modifierFlags.intersection(MouseTrigger.modifierMask).rawValue
+            trigger = .sidewaysScroll(direction: dx > 0 ? 1 : -1, modifiers: modifiers)
+            stop()
         }
-        if let global = NSEvent.addGlobalMonitorForEvents(matching: .otherMouseDown, handler: capture) {
-            monitors.append(global)
+
+        for (mask, handler) in [(NSEvent.EventTypeMask.otherMouseDown, captureButton),
+                                (NSEvent.EventTypeMask.scrollWheel, captureScroll)] {
+            if let local = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { handler($0); return nil }) {
+                monitors.append(local)
+            }
+            if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: handler) {
+                monitors.append(global)
+            }
         }
         if let escape = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { event in
             if Int(event.keyCode) == kVK_Escape { stop(); return nil }

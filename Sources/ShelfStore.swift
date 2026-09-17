@@ -6,6 +6,7 @@ struct ShelfItem: Identifiable, Equatable {
     let id = UUID()
     var url: URL
     var thumbnail: NSImage
+    var modified: Date?
 
     static func == (a: ShelfItem, b: ShelfItem) -> Bool { a.id == b.id }
 }
@@ -16,6 +17,8 @@ final class ShelfStore: ObservableObject {
     @Published private(set) var items: [ShelfItem] = []
     @Published var expanded: Bool = false
     @Published var hovering: Bool = false
+    /// Screenshots selected with ⌘-click on the expanded shelf.
+    @Published var selection: Set<UUID> = []
 
     static let stagingURL: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -39,31 +42,104 @@ final class ShelfStore: ObservableObject {
     func add(_ url: URL) -> Bool {
         guard !items.contains(where: { $0.url == url }) else { return false }
         guard let thumb = ShelfStore.thumbnail(for: url) else { return false }
-        items.append(ShelfItem(url: url, thumbnail: thumb))
+        items.append(ShelfItem(url: url, thumbnail: thumb, modified: ShelfStore.modificationDate(of: url)))
         return true
     }
 
-    // MARK: - Saving (always to the save folder, never deleted)
+    // MARK: - Selection
 
-    /// Moves everything to the save folder and empties the shelf. Screenshots
-    /// that could not be moved stay put, so nothing is ever lost.
+    func isSelected(_ item: ShelfItem) -> Bool { selection.contains(item.id) }
+
+    func toggleSelection(_ item: ShelfItem) {
+        if selection.contains(item.id) { selection.remove(item.id) } else { selection.insert(item.id) }
+    }
+
+    func clearSelection() {
+        if !selection.isEmpty { selection.removeAll() }
+    }
+
+    /// What an action on `item` applies to: the whole selection if the item is
+    /// part of it, otherwise just the item.
+    func targets(for item: ShelfItem) -> [ShelfItem] {
+        guard selection.contains(item.id), selection.count > 1 else { return [item] }
+        return items.filter { selection.contains($0.id) }
+    }
+
+    // MARK: - Getting rid of screenshots (saved, or moved to the Trash)
+
+    /// Saves everything to the save folder and empties the shelf. Used on quit,
+    /// so it never trashes anything.
     func flushAll() {
-        items = items.filter { ShelfStore.keepAfterFlush($0) }
+        dispose(items, action: .save)
+    }
+
+    /// Takes screenshots off the shelf. Files that could not be saved or trashed
+    /// stay on the shelf, so nothing is ever lost by accident.
+    func dispose(_ targets: [ShelfItem], action: DisposeAction) {
+        let failed = Set(targets.filter { !ShelfStore.dispose($0.url, action: action) }.map(\.id))
+        let removed = Set(targets.map(\.id)).subtracting(failed)
+        items.removeAll { removed.contains($0.id) }
+        selection.subtract(removed)
         if items.isEmpty { expanded = false }
     }
 
-    /// Moves one screenshot to the save folder and takes it off the shelf.
-    func flush(_ item: ShelfItem) {
-        guard !ShelfStore.keepAfterFlush(item) else { return }
-        items.removeAll { $0.id == item.id }
-        if items.isEmpty { expanded = false }
+    /// True when the file is gone from the shelf's point of view: saved,
+    /// trashed, or already deleted outside the app.
+    private static func dispose(_ url: URL, action: DisposeAction) -> Bool {
+        guard FileManager.default.fileExists(atPath: url.path) else { return true }
+        switch action {
+        case .save:
+            return moveToDestination(url) != nil
+        case .trash:
+            do {
+                try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+                return true
+            } catch {
+                NSLog("ShotShelf: could not move %@ to the Trash: %@", url.path, String(describing: error))
+                return false
+            }
+        }
     }
 
-    /// A screenshot stays on the shelf only if its file still exists and moving
-    /// it failed. A file that disappeared outside the app is simply dropped.
-    private static func keepAfterFlush(_ item: ShelfItem) -> Bool {
-        guard FileManager.default.fileExists(atPath: item.url.path) else { return false }
-        return moveToDestination(item.url) == nil
+    // MARK: - Quick actions
+
+    func copy(_ targets: [ShelfItem]) {
+        guard !targets.isEmpty else { return }
+        if targets.count == 1 {
+            ShelfStore.copyToPasteboard(targets[0].url)
+        } else {
+            let pb = NSPasteboard.general
+            pb.clearContents()
+            pb.writeObjects(targets.map { ScreenshotDragItem(url: $0.url) })
+        }
+    }
+
+    func openInPreview(_ targets: [ShelfItem]) {
+        let urls = targets.map(\.url)
+        guard !urls.isEmpty else { return }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        if let preview = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Preview") {
+            NSWorkspace.shared.open(urls, withApplicationAt: preview, configuration: configuration)
+        } else {
+            urls.forEach { NSWorkspace.shared.open($0) }
+        }
+    }
+
+    /// Reloads thumbnails of files that changed, e.g. after editing in Preview.
+    func refreshThumbnails() {
+        for index in items.indices {
+            let url = items[index].url
+            let modified = ShelfStore.modificationDate(of: url)
+            guard modified != items[index].modified, let thumb = ShelfStore.thumbnail(for: url) else { continue }
+            items[index].thumbnail = thumb
+            items[index].modified = modified
+        }
+    }
+
+    static func modificationDate(of url: URL?) -> Date? {
+        guard let url else { return nil }
+        return (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
     }
 
     @discardableResult

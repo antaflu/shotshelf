@@ -26,10 +26,15 @@ xattr -dr com.apple.quarantine /Applications/ShotShelf.app
 
 Requires macOS 13 or later. Universal build (Apple silicon and Intel).
 
-## Dragging
+## Working with screenshots
 
 - **Drag the stack** to take all screenshots along at once.
 - **Drag a single screenshot** from the expanded shelf.
+- **⌘-click** screenshots on the expanded shelf to select several; dragging
+  or any action on one of them then applies to the whole selection.
+- **Hover** a screenshot for quick actions: copy it again, open it in
+  Preview (edits show up on the shelf), or move it to the Trash. The × saves
+  it to your folder, or trashes it if you prefer (see Settings).
 
 Dragged screenshots are offered both as a file and as plain image data, so
 Finder, chat apps and editors all accept them. Dragging always copies; the
@@ -44,11 +49,13 @@ Open Settings from the gear on the expanded shelf, from the menu bar icon (⌘,)
 or by opening ShotShelf again from Applications, which works even with both
 icons turned off.
 
-- **Saving:** the folder screenshots move to when you close the shelf.
+- **Saving:** the folder screenshots move to, and whether closing a single
+  screenshot or the whole shelf saves or trashes. Quitting always saves.
 - **Shelf:** which corner it appears in. It grows away from that corner and
   swipes off towards the nearest side.
-- **Show and Hide:** a keyboard shortcut, an extra mouse button, and/or a hot
-  corner (move the pointer in, or scroll sideways there, e.g. with the thumb
+- **Show and Hide:** a keyboard shortcut, an extra mouse button or sideways
+  scroll (the thumb wheel on a Logitech MX Master, optionally with a modifier
+  key), and/or a hot corner (move the pointer in, or scroll sideways there, e.g. with the thumb
   wheel of a Logitech mouse). Hiding saves nothing; screenshots stay on the
   shelf. Turn off the macOS hot corner for the same corner.
 - **Appearance:** menu bar and/or Dock icon, and which icon.

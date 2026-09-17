@@ -90,10 +90,17 @@ final class ToggleTriggers {
             }
         }
 
-        if let button = settings.toggleMouseButton {
+        switch settings.toggleMouseTrigger {
+        case .button(let button):
             addMonitors(for: .otherMouseDown) { [weak self] event in
                 if event.buttonNumber == button { self?.fire() }
             }
+        case .sidewaysScroll(let direction, let modifiers):
+            addMonitors(for: .scrollWheel) { [weak self] event in
+                self?.handleSidewaysScroll(event, direction: direction, modifiers: modifiers)
+            }
+        case nil:
+            break
         }
 
         guard let corner = settings.hotCorner else { return }
@@ -122,6 +129,28 @@ final class ToggleTriggers {
         guard !suspended, Date().timeIntervalSince(lastFired) > 0.4 else { return }
         lastFired = Date()
         onToggle()
+    }
+
+    // MARK: - Sideways scroll
+
+    private var sidewaysAccumulated: CGFloat = 0
+    private var lastSidewaysEvent = Date.distantPast
+
+    func handleSidewaysScroll(_ event: NSEvent, direction: Int, modifiers: UInt) {
+        let held = event.modifierFlags.intersection(MouseTrigger.modifierMask).rawValue
+        let dx = event.scrollingDeltaX, dy = event.scrollingDeltaY
+        guard held == modifiers, abs(dx) > abs(dy), (dx > 0 ? 1 : -1) == direction,
+              event.momentumPhase.isEmpty else { return }
+
+        // A pause means a new swipe of the wheel.
+        if Date().timeIntervalSince(lastSidewaysEvent) > 0.3 { sidewaysAccumulated = 0 }
+        lastSidewaysEvent = Date()
+        sidewaysAccumulated += abs(dx)
+
+        let threshold: CGFloat = event.hasPreciseScrollingDeltas ? 30 : 1
+        guard sidewaysAccumulated >= threshold else { return }
+        sidewaysAccumulated = 0
+        if Date().timeIntervalSince(lastFired) > 0.8 { fire() }
     }
 
     // MARK: - Hot corner

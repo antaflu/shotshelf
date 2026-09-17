@@ -72,6 +72,7 @@ final class ShelfController {
         slideOut(panel) { [weak self] in
             self?.store.expanded = false
             self?.store.hovering = false
+            self?.store.clearSelection()
         }
     }
 
@@ -79,17 +80,17 @@ final class ShelfController {
         isVisible ? hide() : show(allowEmpty: true)
     }
 
-    /// Closes the shelf and moves everything on it to the save folder.
+    /// Closes the shelf and saves or trashes everything on it, per Settings.
     func dismiss() {
         allowEmpty = false
         guard let panel, panel.isVisible else {
-            store.flushAll()
+            store.dispose(store.items, action: settings.closeShelfAction)
             return
         }
         slideOut(panel) { [weak self] in
             guard let self else { return }
             self.store.hovering = false
-            self.store.flushAll()
+            self.store.dispose(self.store.items, action: self.settings.closeShelfAction)
             // Anything that could not be moved comes back into view.
             if !self.store.isEmpty { self.show() }
         }

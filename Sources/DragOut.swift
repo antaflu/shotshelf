@@ -36,17 +36,38 @@ final class ScreenshotDragItem: NSObject, NSPasteboardWriting {
     }
 }
 
-/// Invisible drag area over the stack. A click expands the shelf, a drag takes
-/// every screenshot along to another app.
+/// Invisible drag area over a screenshot or the stack. A drag takes the
+/// screenshots along to another app; clicks and hover are reported back.
 final class DragOutNSView: NSView, NSDraggingSource {
     var items: () -> [(url: URL, image: NSImage)] = { [] }
-    var onClick: () -> Void = {}
+    var onClick: (NSEvent.ModifierFlags) -> Void = { _ in }
+    var onHover: (Bool) -> Void = { _ in }
+    /// Points (in this view) where SwiftUI buttons drawn on top should get the click.
+    var passesThrough: (NSPoint, NSSize) -> Bool = { _, _ in false }
 
     private var mouseDownAt: NSPoint = .zero
     private var didDrag = false
 
     /// The panel is never active; without this the first click would only focus it.
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let hit = super.hitTest(point) else { return nil }
+        let local = convert(point, from: superview)
+        return passesThrough(local, bounds.size) ? nil : hit
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self))
+    }
+
+    override func mouseEntered(with event: NSEvent) { onHover(true) }
+    override func mouseExited(with event: NSEvent) { onHover(false) }
 
     override func mouseDown(with event: NSEvent) {
         mouseDownAt = event.locationInWindow
@@ -63,7 +84,7 @@ final class DragOutNSView: NSView, NSDraggingSource {
     }
 
     override func mouseUp(with event: NSEvent) {
-        if !didDrag { onClick() }
+        if !didDrag { onClick(event.modifierFlags) }
         didDrag = false
     }
 
@@ -92,17 +113,20 @@ final class DragOutNSView: NSView, NSDraggingSource {
 
 struct DragOutArea: NSViewRepresentable {
     var items: () -> [(url: URL, image: NSImage)]
-    var onClick: () -> Void
+    var onClick: (NSEvent.ModifierFlags) -> Void
+    var onHover: (Bool) -> Void = { _ in }
+    var passesThrough: (NSPoint, NSSize) -> Bool = { _, _ in false }
 
     func makeNSView(context: Context) -> DragOutNSView {
         let view = DragOutNSView()
-        view.items = items
-        view.onClick = onClick
+        updateNSView(view, context: context)
         return view
     }
 
     func updateNSView(_ view: DragOutNSView, context: Context) {
         view.items = items
         view.onClick = onClick
+        view.onHover = onHover
+        view.passesThrough = passesThrough
     }
 }
