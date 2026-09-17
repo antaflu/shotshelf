@@ -33,11 +33,12 @@ Requires macOS 13 or later. Universal build (Apple silicon and Intel).
 - **Select several** on the expanded shelf: ⌘-click them, or drag a
   Finder-style selection rectangle from empty space (or after briefly holding
   a screenshot). Hold ⌘ to add to the current selection. Dragging or any action on a selected screenshot applies to all of them.
-- **Double-click** a screenshot to open it in Preview.
-- **Hover** a screenshot for quick actions: **Copy** and **View** (open in
-  Preview; edits show up on the shelf) in the middle, **Delete** (to the Trash)
-  in the bottom-left corner. The × saves it to your folder; it's hidden when
-  Settings make it trash screenshots, since Delete already does that. You can start a drag anywhere, even on a button.
+- **Click** a screenshot to copy it (a selection is copied as a whole), and
+  **double-click** to open it in Preview. Hovering enlarges it slightly and
+  shows a × that saves it to your folder, or trashes it if you prefer.
+- **Quick actions** (optional, in Settings): Copy and View buttons in the
+  middle and Delete in the bottom-left on hover. You can still start a drag
+  anywhere. The × is then hidden when it would do the same as Delete.
 - **Drop images onto the shelf** to keep them there for a while. Drag them
   towards the shelf's corner and it comes out by itself. Files from disk are
   only referenced: closing or deleting them just takes them off the shelf, the
@@ -60,8 +61,8 @@ icons turned off.
 
 - **Saving:** the folder screenshots move to, and whether closing a single
   screenshot or the whole shelf saves or trashes. Quitting always saves.
-- **Shelf:** thumbnail size (Small, Medium or Large) and which corner it
-  appears in. It grows away from that corner and
+- **Shelf:** thumbnail size (Small, Medium or Large), quick actions on hover,
+  and which corner it appears in. It grows away from that corner and
   swipes off towards the nearest side.
 - **Show and Hide:** a keyboard shortcut, an extra mouse button, and/or a hot
   corner. In the hot corner, either move the pointer in, or scroll or swipe

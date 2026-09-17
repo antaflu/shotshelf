@@ -73,6 +73,9 @@ struct SettingsView: View {
                     ForEach(ThumbnailSize.allCases) { Text($0.label).tag($0) }
                 }
                 .pickerStyle(.segmented)
+                Toggle("Show Copy, View and Delete on hover", isOn: $settings.hoverQuickActions)
+                Text("Clicking a screenshot always copies it. Double-click opens it in Preview.")
+                    .font(.caption).foregroundColor(.secondary)
                 Toggle("Show when dragging images to its corner", isOn: $settings.revealOnDrag)
                 Toggle("Turn off the macOS preview thumbnail", isOn: $settings.hideSystemPreview)
                 Text("The floating macOS thumbnail delays the shelf by a few seconds.")

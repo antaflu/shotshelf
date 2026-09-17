@@ -209,6 +209,7 @@ final class AppSettings: ObservableObject {
         static let swipeAxis = "SwipeAxis"
         static let revealOnDrag = "RevealOnDrag"
         static let thumbnailSize = "ThumbnailSize"
+        static let hoverQuickActions = "HoverQuickActions"
         static let autoCheckUpdates = "AutoCheckUpdates"
     }
 
@@ -279,6 +280,11 @@ final class AppSettings: ObservableObject {
     @Published var thumbnailSize: ThumbnailSize {
         didSet { defaults.set(thumbnailSize.rawValue, forKey: Key.thumbnailSize) }
     }
+    /// Copy, View and Delete buttons on hover. Off by default: hovering then
+    /// only shows the × and a click copies the screenshot.
+    @Published var hoverQuickActions: Bool {
+        didSet { defaults.set(hoverQuickActions, forKey: Key.hoverQuickActions) }
+    }
     /// Show the shelf when you drag images or files towards its corner.
     @Published var revealOnDrag: Bool {
         didSet { defaults.set(revealOnDrag, forKey: Key.revealOnDrag) }
@@ -318,6 +324,7 @@ final class AppSettings: ObservableObject {
         swapScrollDirections = defaults.bool(forKey: Key.swapScrollDirections)
         swipeAxis = defaults.string(forKey: Key.swipeAxis).flatMap(SwipeAxis.init(rawValue:)) ?? .horizontal
         revealOnDrag = defaults.bool(forKey: Key.revealOnDrag)
+        hoverQuickActions = defaults.bool(forKey: Key.hoverQuickActions)
         thumbnailSize = defaults.string(forKey: Key.thumbnailSize).flatMap(ThumbnailSize.init(rawValue:)) ?? .small
         autoCheckUpdates = defaults.bool(forKey: Key.autoCheckUpdates)
 

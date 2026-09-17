@@ -11,6 +11,9 @@ enum ShelfLayout {
     static var stackArea: CGFloat { (preset.collapsed * 0.64).rounded() }
     static let gap: CGFloat = 10
     static let pad: CGFloat = 16
+    /// Room inside the scroll area so a tile that grows on hover isn't clipped.
+    /// Taken out of `pad` and `gap`, so the shelf keeps the same size.
+    static let hoverRoom: CGFloat = 4
     static let columns = 3
     static let headerHeight: CGFloat = 24
     static let maxRows = 4
@@ -185,8 +188,9 @@ struct ShelfView: View {
     // MARK: - Expanded: every screenshot on its own
 
     private var expandedContent: some View {
-        VStack(alignment: .leading, spacing: ShelfLayout.gap) {
+        VStack(alignment: .leading, spacing: ShelfLayout.gap - ShelfLayout.hoverRoom) {
             header
+                .padding([.horizontal, .top], ShelfLayout.hoverRoom)
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVGrid(
                     columns: Array(repeating: GridItem(.fixed(ShelfLayout.tile), spacing: ShelfLayout.gap),
@@ -197,11 +201,12 @@ struct ShelfView: View {
                         ShelfTile(item: item, store: store, settings: settings)
                     }
                 }
+                .padding(ShelfLayout.hoverRoom)
                 // The gaps between screenshots live inside the scroll view.
                 .background(selectionCanvas)
             }
         }
-        .padding(ShelfLayout.pad)
+        .padding(ShelfLayout.pad - ShelfLayout.hoverRoom)
         .background(selectionCanvas)
     }
 
@@ -274,12 +279,14 @@ struct ShelfView: View {
     }
 }
 
-/// One screenshot on the expanded shelf: draggable into any app, ⌘-click or
-/// drag a rectangle to select several, double-click to open in Preview.
+/// One screenshot on the expanded shelf: click to copy, drag into any app,
+/// ⌘-click or drag a rectangle to select several, double-click to open in
+/// Preview.
 ///
-/// On hover, Copy and View sit large in the middle, Delete in the bottom-left
-/// corner and × in the top-right. × only shows when it does something Delete
-/// doesn't: saving to the folder, or letting go of a dragged-in file. They are drawn here but clicked through the
+/// On hover it grows slightly and shows × in the top-right. With quick actions
+/// turned on in Settings, Copy and View also sit large in the middle and
+/// Delete in the bottom-left; × then only shows when it does something Delete
+/// doesn't (saving to the folder, or letting go of a dragged-in file). They are drawn here but clicked through the
 /// drag area underneath (see `Hotspot`), so a drag can start anywhere.
 private struct ShelfTile: View {
     let item: ShelfItem
@@ -288,6 +295,7 @@ private struct ShelfTile: View {
     @State private var hovering = false
     @State private var hoveredSpot: String?
     @State private var justCopied = false
+    @State private var copyToken = 0
 
     private enum Spot {
         static let copy = "copy", view = "view", delete = "delete", close = "close"
@@ -301,8 +309,11 @@ private struct ShelfTile: View {
     private var selected: Bool { store.isSelected(item) }
     /// Actions apply to the whole selection when this screenshot is part of it.
     private var targets: [ShelfItem] { store.targets(for: item) }
-    private var canDelete: Bool { !item.isReference }
-    private var showsClose: Bool { item.isReference || settings.closeScreenshotAction == .save }
+    private var quickActions: Bool { settings.hoverQuickActions }
+    private var canDelete: Bool { quickActions && !item.isReference }
+    private var showsClose: Bool {
+        !quickActions || item.isReference || settings.closeScreenshotAction == .save
+    }
 
     private func describe(_ verb: String) -> String {
         targets.count > 1 ? "\(verb) \(targets.count) items" : verb
@@ -312,12 +323,15 @@ private struct ShelfTile: View {
     private func hotspots(in size: NSSize) -> [Hotspot] {
         guard hovering else { return [] }
         let pill = Self.pillSize, gap = Self.pillGap / 2
-        var spots = [
-            Hotspot(id: Spot.copy, rect: NSRect(x: size.width / 2 - pill.width / 2, y: size.height / 2 + gap,
-                                                width: pill.width, height: pill.height)),
-            Hotspot(id: Spot.view, rect: NSRect(x: size.width / 2 - pill.width / 2, y: size.height / 2 - gap - pill.height,
-                                                width: pill.width, height: pill.height)),
-        ]
+        var spots: [Hotspot] = []
+        if quickActions {
+            spots += [
+                Hotspot(id: Spot.copy, rect: NSRect(x: size.width / 2 - pill.width / 2, y: size.height / 2 + gap,
+                                                    width: pill.width, height: pill.height)),
+                Hotspot(id: Spot.view, rect: NSRect(x: size.width / 2 - pill.width / 2, y: size.height / 2 - gap - pill.height,
+                                                    width: pill.width, height: pill.height)),
+            ]
+        }
         if showsClose {
             spots.append(Hotspot(id: Spot.close, rect: NSRect(x: size.width - 22, y: size.height - 22, width: 22, height: 22)))
         }
@@ -331,9 +345,7 @@ private struct ShelfTile: View {
     private func perform(_ spot: String) {
         switch spot {
         case Spot.copy:
-            store.copy(targets)
-            justCopied = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { justCopied = false }
+            copy()
         case Spot.view:
             store.openInPreview(targets)
         case Spot.delete:
@@ -345,11 +357,32 @@ private struct ShelfTile: View {
         }
     }
 
+    private func copy() {
+        store.copy(targets)
+        justCopied = true
+        copyToken += 1
+        let token = copyToken
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            if token == copyToken { justCopied = false }
+        }
+    }
+
+    /// A plain click copies: the whole selection if this screenshot is part of
+    /// it, otherwise just this one.
+    private func click(_ flags: NSEvent.ModifierFlags) {
+        if flags.contains(.command) {
+            store.toggleSelection(item)
+            return
+        }
+        if !(selected && targets.count > 1) { store.clearSelection() }
+        copy()
+    }
+
     var body: some View {
         Thumbnail(image: item.thumbnail, side: ShelfLayout.tile, mode: .fit)
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.black.opacity(hovering ? 0.16 : 0))
+                    .fill(Color.black.opacity(hovering && quickActions ? 0.16 : 0))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -365,12 +398,16 @@ private struct ShelfTile: View {
             }
             // The buttons stay in place and fade, so hovering feels soft.
             .overlay {
-                VStack(spacing: Self.pillGap) {
-                    pill(symbol: justCopied ? "checkmark" : "doc.on.doc",
-                         title: justCopied ? "Copied" : "Copy", spot: Spot.copy)
-                    pill(symbol: "eye", title: "View", spot: Spot.view)
+                if quickActions {
+                    VStack(spacing: Self.pillGap) {
+                        pill(symbol: justCopied ? "checkmark" : "doc.on.doc",
+                             title: justCopied ? "Copied" : "Copy", spot: Spot.copy)
+                        pill(symbol: "eye", title: "View", spot: Spot.view)
+                    }
+                    .revealed(hovering)
+                } else {
+                    copiedBadge.revealed(justCopied)
                 }
-                .revealed(hovering)
             }
             .overlay(alignment: .topTrailing) {
                 if showsClose { closeMark.revealed(hovering) }
@@ -381,9 +418,7 @@ private struct ShelfTile: View {
             .overlay(
                 DragOutArea(
                     items: { targets.map { (url: $0.url, image: $0.thumbnail) } },
-                    onClick: { flags in
-                        if flags.contains(.command) { store.toggleSelection(item) } else { store.clearSelection() }
-                    },
+                    onClick: { click($0) },
                     onDoubleClick: { store.openInPreview([item]) },
                     onHover: { hovering = $0 },
                     hotspots: { hotspots(in: $0) },
@@ -392,10 +427,28 @@ private struct ShelfTile: View {
                     itemID: item.id,
                     selection: store.marqueeSelection)
             )
+            .scaleEffect(hovering ? 1.04 : 1)
+            .zIndex(hovering ? 1 : 0)
             .animation(.easeOut(duration: 0.18), value: hovering)
             .animation(.easeOut(duration: 0.15), value: selected)
             .animation(.easeOut(duration: 0.12), value: hoveredSpot)
+            .animation(.easeOut(duration: 0.16), value: justCopied)
             .help(helpText)
+    }
+
+    private var copiedBadge: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "checkmark")
+                .font(.system(size: 9, weight: .bold))
+            Text(targets.count > 1 ? "Copied \(targets.count)" : "Copied")
+                .font(.system(size: 10.5, weight: .semibold))
+        }
+        .foregroundColor(.white)
+        .padding(.horizontal, 9)
+        .frame(height: 22)
+        .background(Capsule().fill(Color.black.opacity(0.5)))
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(Color.white.opacity(0.14), lineWidth: 0.5))
     }
 
     private var helpText: String {
@@ -409,8 +462,9 @@ private struct ShelfTile: View {
                 ? describe("Move to Trash")
                 : describe("Save to \(settings.saveFolder.lastPathComponent)")
         default:
-            return item.isReference ? "\(item.url.lastPathComponent) — \(item.url.deletingLastPathComponent().path)"
-                                    : item.url.lastPathComponent
+            let name = item.isReference ? "\(item.url.lastPathComponent) — \(item.url.deletingLastPathComponent().path)"
+                                        : item.url.lastPathComponent
+            return "\(name)\nClick to copy, double-click to open"
         }
     }
 
