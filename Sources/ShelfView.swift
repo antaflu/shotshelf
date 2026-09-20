@@ -212,26 +212,24 @@ struct ShelfView: View {
 
     private var header: some View {
         HStack(spacing: 6) {
-            // The chevron and the title are one button, so collapsing is an easy target.
-            Button {
+            // The chevron, the title and the empty space beside it all collapse
+            // the shelf, so it's an easy target. Swiping still works here too.
+            HStack(spacing: 6) {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .bold))
+                    .frame(width: 18, height: 18)
+                Text(headerTitle)
+                    .font(.system(size: 11, weight: .medium))
+                Spacer(minLength: 8)
+            }
+            .foregroundColor(.secondary)
+            .frame(height: ShelfLayout.headerHeight)
+            .contentShape(Rectangle())
+            .onTapGesture {
                 store.clearSelection()
                 withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) { store.expanded = false }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 10, weight: .bold))
-                        .frame(width: 18, height: 18)
-                    Text(headerTitle)
-                        .font(.system(size: 11, weight: .medium))
-                }
-                .foregroundColor(.secondary)
-                .frame(height: ShelfLayout.headerHeight)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
             .help("Collapse")
-
-            Spacer(minLength: 8)
 
             settingsButton
         }
