@@ -33,8 +33,15 @@ struct Shelf: Identifiable {
 
 /// Holds every shelf, and saves or trashes the files ShotShelf owns.
 final class ShelfStore: ObservableObject {
-    @Published var shelves: [Shelf] = [Shelf(name: "Shelf 1")]
-    @Published var currentIndex = 0
+    /// Starred on the left, then two plain shelves; the middle one is the one
+    /// you start on.
+    static func defaultShelves() -> [Shelf] {
+        [Shelf(name: "Starred", symbol: .symbol("star.fill")), Shelf(name: "Shelf 1"), Shelf(name: "Shelf 2")]
+    }
+    static let defaultIndex = 1
+
+    @Published var shelves: [Shelf] = ShelfStore.defaultShelves()
+    @Published var currentIndex = ShelfStore.defaultIndex
 
     /// What's on the shelf you're looking at.
     var items: [ShelfItem] {
@@ -86,9 +93,13 @@ final class ShelfStore: ObservableObject {
 
     var canAddShelf: Bool { shelves.count < ShelfStore.maxShelves }
 
+    /// Which way the screenshots slide when the shelf changes.
+    private(set) var switchedForward = true
+
     func select(_ index: Int) {
         guard shelves.indices.contains(index), index != currentIndex else { return }
         selection.removeAll()
+        switchedForward = index > currentIndex
         currentIndex = index
     }
 
@@ -104,6 +115,14 @@ final class ShelfStore: ObservableObject {
         guard shelves.count > 1, shelves.indices.contains(index), shelves[index].items.isEmpty else { return }
         shelves.remove(at: index)
         currentIndex = min(currentIndex, shelves.count - 1)
+    }
+
+    func moveShelf(from: Int, to: Int) {
+        guard shelves.indices.contains(from), shelves.indices.contains(to), from != to else { return }
+        let current = shelves[currentIndex].id
+        let shelf = shelves.remove(at: from)
+        shelves.insert(shelf, at: to)
+        currentIndex = shelves.firstIndex { $0.id == current } ?? currentIndex
     }
 
     func move(_ moving: [ShelfItem], toShelf index: Int) {

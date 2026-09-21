@@ -77,8 +77,19 @@ enum ShelfStorage {
         guard let data = try? Data(contentsOf: libraryURL),
               let library = try? JSONDecoder().decode(StoredLibrary.self, from: data),
               !library.shelves.isEmpty else { return }
-        store.shelves = library.shelves.map(shelf(from:))
-        store.currentIndex = min(max(0, library.currentIndex), store.shelves.count - 1)
+        var shelves = library.shelves.map(shelf(from:))
+        var index = min(max(0, library.currentIndex), shelves.count - 1)
+
+        // Libraries from before shelves could be switched hold a single shelf:
+        // give them the Starred shelf and a spare, keeping their screenshots.
+        if shelves.count == 1, ["Shelf 1", "Starred"].contains(shelves[0].name) {
+            var defaults = ShelfStore.defaultShelves()
+            defaults[ShelfStore.defaultIndex].items = shelves[0].items
+            shelves = defaults
+            index = ShelfStore.defaultIndex
+        }
+        store.shelves = shelves
+        store.currentIndex = index
     }
 
     // MARK: - .shelf files

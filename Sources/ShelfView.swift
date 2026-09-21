@@ -226,6 +226,11 @@ struct ShelfView: View {
                         }
                     }
                 }
+                // Switching shelves slides the screenshots in from the side.
+                .id(store.current.id)
+                .transition(.asymmetric(
+                    insertion: .move(edge: store.switchedForward ? .trailing : .leading).combined(with: .opacity),
+                    removal: .move(edge: store.switchedForward ? .leading : .trailing).combined(with: .opacity)))
                 .padding(ShelfLayout.hoverRoom)
                 // The gaps between screenshots live inside the scroll view.
                 .background(selectionCanvas)
@@ -251,34 +256,32 @@ struct ShelfView: View {
 
     private var header: some View {
         HStack(spacing: 6) {
-            // The chevron, the title and the empty space beside it all collapse
-            // the shelf, so it's an easy target. Swiping still works here too.
-            HStack(spacing: 6) {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .bold))
-                    .frame(width: 18, height: 18)
-                Text(headerTitle)
-                    .font(.system(size: 11, weight: .medium))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Spacer(minLength: 4)
-            }
-            .foregroundColor(.secondary)
-            .frame(height: ShelfLayout.headerHeight)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                store.clearSelection()
-                withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) { store.expanded = false }
-            }
-            .help("Collapse")
+            Image(systemName: "chevron.down")
+                .font(.system(size: 10, weight: .bold))
+                .frame(width: 18, height: 18)
+            Text(headerTitle)
+                .font(.system(size: 11, weight: .medium))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .layoutPriority(1)
 
+            // Equal spacers keep the shelves centred between the count and the gear.
+            Spacer(minLength: 6)
             ShelfDots(store: store, onSave: onSaveShelf, onOpen: onOpenShelf)
+            Spacer(minLength: 6)
 
             settingsButton
         }
+        .foregroundColor(.secondary)
         .padding(.trailing, 20) // room for the close button
         .frame(height: ShelfLayout.headerHeight)
+        // Anywhere that isn't a button collapses the shelf.
         .contentShape(Rectangle())
+        .onTapGesture {
+            store.clearSelection()
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) { store.expanded = false }
+        }
+        .help("Collapse")
         .gesture(swipe)
     }
 

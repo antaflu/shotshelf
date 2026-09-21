@@ -42,15 +42,54 @@ enum ShelfSymbol: Equatable, Codable {
         "terminal.fill", "hammer.fill", "square.fill", "drop.fill", "circle.fill", "moon.fill",
         "sun.max.fill", "globe.europe.africa.fill", "leaf.fill", "cloud.fill", "pawprint.fill",
         "house.fill", "gift.fill", "bed.double.fill", "fork.knife", "dumbbell.fill", "airplane",
-        "music.note", "paintpalette.fill", "video.fill", "bandage.fill", "chevron.left.forwardslash.chevron.right",
-        "baseball.fill", "cloud.sun.fill", "map.fill", "flame.fill", "square.3.layers.3d", "figure.walk",
-        "note.text", "hand.thumbsup.fill", "tram.fill",
+        "music.note", "paintpalette.fill", "video.fill", "bandage.fill",
+        "chevron.left.forwardslash.chevron.right", "baseball.fill", "cloud.sun.fill", "map.fill",
+        "flame.fill", "square.3.layers.3d", "figure.walk", "note.text", "hand.thumbsup.fill", "tram.fill",
+        "camera.fill", "photo.fill", "scissors", "paperclip", "link", "magnifyingglass", "eye.fill",
+        "pin.fill", "tag.fill", "cart.fill", "creditcard.fill", "banknote.fill", "chart.bar.fill",
+        "chart.pie.fill", "clock.fill", "alarm.fill", "timer", "stopwatch.fill", "graduationcap.fill",
+        "briefcase.fill", "building.2.fill", "car.fill", "bicycle", "ferry.fill", "location.fill",
+        "mappin.and.ellipse", "wifi", "antenna.radiowaves.left.and.right", "bolt.horizontal.fill",
+        "battery.100", "speaker.wave.2.fill", "mic.fill", "headphones", "gamecontroller.fill",
+        "puzzlepiece.fill", "wand.and.stars", "sparkles", "crown.fill", "trophy.fill", "medal.fill",
+        "gearshape.fill", "wrench.and.screwdriver.fill", "cube.fill", "shippingbox.fill", "printer.fill",
+        "desktopcomputer", "laptopcomputer", "iphone", "applewatch", "keyboard", "externaldrive.fill",
+        "internaldrive.fill", "server.rack", "network", "lock.fill", "key.fill", "shield.fill",
+        "exclamationmark.triangle.fill", "questionmark.circle.fill", "info.circle.fill", "trash.fill",
+        "arrow.down.circle.fill", "arrow.up.circle.fill", "arrow.triangle.2.circlepath", "paperplane.fill",
+        "tray.and.arrow.down.fill", "doc.on.doc.fill", "text.alignleft", "list.bullet", "checklist",
+        "pencil", "highlighter", "ruler.fill", "compass.drawing", "theatermasks.fill", "film.fill",
+        "tv.fill", "book.closed.fill", "newspaper.fill", "bookmark.square.fill", "face.smiling.fill",
+        "hand.wave.fill", "figure.run", "sportscourt.fill", "soccerball", "basketball.fill",
+        "tennis.racket", "snowflake", "umbrella.fill", "thermometer.medium", "wind", "tornado",
+        "hurricane", "sunrise.fill", "sunset.fill", "sparkle", "atom", "brain.head.profile",
+        "cross.case.fill", "pills.fill", "stethoscope", "carrot.fill", "cup.and.saucer.fill",
+        "birthday.cake.fill", "wineglass.fill", "takeoutbag.and.cup.and.straw.fill",
     ]
 
-    static let emojiChoices = [
-        "📸", "⭐️", "❤️", "🔥", "✅", "📌", "🎯", "💡", "📁", "🗂", "📝", "🎨", "🧪", "🐛", "🚀", "🧠",
-        "💬", "📊", "💸", "🛒", "🎬", "🎵", "🌍", "🌱", "☕️", "🍕", "🐱", "🐶", "🌈", "⚡️", "🔒", "🔧",
-    ]
+    /// Every emoji macOS can draw on its own, so the picker has them all.
+    static let emojiChoices: [String] = {
+        let ranges: [ClosedRange<UInt32>] = [
+            0x1F300...0x1F5FF, 0x1F600...0x1F64F, 0x1F680...0x1F6FC, 0x1F7E0...0x1F7EB,
+            0x1F90C...0x1F9FF, 0x1FA70...0x1FAF8, 0x2600...0x26FF, 0x2700...0x27BF,
+        ]
+        var result: [String] = []
+        for range in ranges {
+            for value in range {
+                guard let scalar = Unicode.Scalar(value), scalar.properties.isEmojiPresentation else { continue }
+                result.append(String(scalar))
+            }
+        }
+        return result
+    }()
+
+    /// What a search matches on: "rocket", "star.fill", and so on.
+    static func searchText(for choice: String) -> String {
+        if let scalar = choice.unicodeScalars.first, let name = scalar.properties.name, choice.count == 1 {
+            return name.lowercased()
+        }
+        return choice.replacingOccurrences(of: ".", with: " ")
+    }
 
     /// The image for a shelf dot, or nil when the shelf has no icon.
     func image(pointSize: CGFloat, color: NSColor) -> NSImage? {
