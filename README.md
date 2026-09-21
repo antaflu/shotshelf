@@ -44,7 +44,11 @@ Requires macOS 13 or later. Universal build (Apple silicon and Intel).
   only referenced: closing or deleting them just takes them off the shelf, the
   original stays put. Images without a file (e.g. from a browser) are saved
   like screenshots.
-- **Collapse** the expanded shelf by clicking its title.
+- **Grouped by date** when the shelf holds more than one day: Today,
+  Yesterday, Earlier this week, Last week, 2 weeks ago, and month names
+  further back. With everything from a single day, no labels appear.
+- **Collapse** the expanded shelf by clicking its header: the chevron, the
+  count, or the empty space beside it.
 
 Dragged screenshots are offered both as a file and as plain image data, so
 Finder, chat apps and editors all accept them. Dragging always copies; the

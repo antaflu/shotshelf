@@ -7,6 +7,8 @@ struct ShelfItem: Identifiable, Equatable {
     var url: URL
     var thumbnail: NSImage
     var modified: Date?
+    /// When the screenshot was taken, or the dropped file was made.
+    var date = Date()
     /// A file you dragged in from somewhere on disk. ShotShelf only points to
     /// it: closing or trashing just takes it off the shelf, the original stays.
     var isReference = false
@@ -58,8 +60,26 @@ final class ShelfStore: ObservableObject {
         guard !items.contains(where: { $0.url.standardizedFileURL == url }) else { return false }
         guard let thumb = ShelfStore.thumbnail(for: url) else { return false }
         items.append(ShelfItem(url: url, thumbnail: thumb, modified: ShelfStore.modificationDate(of: url),
-                               isReference: isReference))
+                               date: ShelfStore.date(of: url), isReference: isReference))
         return true
+    }
+
+    // MARK: - Grouping by date
+
+    /// Screenshots grouped the way Photos does it: Today, Yesterday, Last week,
+    /// 2 weeks ago, and months further back. Oldest first, like the shelf itself.
+    var groups: [ShelfGroup] {
+        let sorted = items.sorted { $0.date < $1.date }
+        var result: [ShelfGroup] = []
+        for item in sorted {
+            let title = ShelfGroup.title(for: item.date)
+            if result.last?.title == title {
+                result[result.count - 1].items.append(item)
+            } else {
+                result.append(ShelfGroup(title: title, items: [item]))
+            }
+        }
+        return result
     }
 
     // MARK: - Selection
@@ -172,6 +192,12 @@ final class ShelfStore: ObservableObject {
             items[index].thumbnail = thumb
             items[index].modified = modified
         }
+    }
+
+    /// Newest date wins: a screenshot edited in Preview stays where you expect it.
+    static func date(of url: URL) -> Date {
+        let values = try? url.resourceValues(forKeys: [.creationDateKey, .contentModificationDateKey])
+        return values?.creationDate ?? values?.contentModificationDate ?? Date()
     }
 
     static func modificationDate(of url: URL?) -> Date? {

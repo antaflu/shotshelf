@@ -16,13 +16,30 @@ enum ShelfLayout {
     static let hoverRoom: CGFloat = 4
     static let columns = 3
     static let headerHeight: CGFloat = 24
+    /// The "Today" / "Last week" labels between groups.
+    static let groupHeader: CGFloat = 15
     static let maxRows = 4
 
-    static func size(expanded: Bool, count: Int) -> CGSize {
+    static func rows(_ count: Int) -> Int {
+        max(1, Int(ceil(Double(count) / Double(columns))))
+    }
+
+    static func size(expanded: Bool, groups: [ShelfGroup]) -> CGSize {
         guard expanded else { return collapsed }
-        let rows = min(maxRows, max(1, Int(ceil(Double(count) / Double(columns)))))
+        let showTitles = groups.count > 1
+        var content: CGFloat = 0
+        for (index, group) in groups.enumerated() {
+            if index > 0 { content += gap }
+            if showTitles { content += groupHeader + gap }
+            let rows = CGFloat(rows(group.items.count))
+            content += rows * tile + (rows - 1) * gap
+        }
+        // Room for a couple of date labels on top of the rows, so grouping
+        // doesn't squeeze the shelf.
+        let extraForTitles = showTitles ? CGFloat(min(groups.count - 1, 2)) * (groupHeader + gap) : 0
+        let maxContent = CGFloat(maxRows) * tile + CGFloat(maxRows - 1) * gap + extraForTitles
         let w = pad * 2 + CGFloat(columns) * tile + CGFloat(columns - 1) * gap
-        let h = pad * 2 + headerHeight + gap + CGFloat(rows) * tile + CGFloat(rows - 1) * gap
+        let h = pad * 2 + headerHeight + gap + min(content, maxContent)
         return CGSize(width: w, height: h)
     }
 }
@@ -192,13 +209,19 @@ struct ShelfView: View {
             header
                 .padding([.horizontal, .top], ShelfLayout.hoverRoom)
             ScrollView(.vertical, showsIndicators: false) {
-                LazyVGrid(
-                    columns: Array(repeating: GridItem(.fixed(ShelfLayout.tile), spacing: ShelfLayout.gap),
-                                   count: ShelfLayout.columns),
-                    spacing: ShelfLayout.gap
-                ) {
-                    ForEach(store.items) { item in
-                        ShelfTile(item: item, store: store, settings: settings)
+                let groups = store.groups
+                VStack(alignment: .leading, spacing: ShelfLayout.gap) {
+                    ForEach(groups) { group in
+                        VStack(alignment: .leading, spacing: ShelfLayout.gap) {
+                            // Only worth labelling when there is more than one day on the shelf.
+                            if groups.count > 1 {
+                                Text(group.title)
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(.secondary)
+                                    .frame(height: ShelfLayout.groupHeader, alignment: .leading)
+                            }
+                            grid(for: group.items)
+                        }
                     }
                 }
                 .padding(ShelfLayout.hoverRoom)
@@ -208,6 +231,20 @@ struct ShelfView: View {
         }
         .padding(ShelfLayout.pad - ShelfLayout.hoverRoom)
         .background(selectionCanvas)
+    }
+
+    private func grid(for items: [ShelfItem]) -> some View {
+        LazyVGrid(
+            columns: Array(repeating: GridItem(.fixed(ShelfLayout.tile), spacing: ShelfLayout.gap,
+                                               alignment: .topLeading),
+                           count: ShelfLayout.columns),
+            alignment: .leading,
+            spacing: ShelfLayout.gap
+        ) {
+            ForEach(items) { item in
+                ShelfTile(item: item, store: store, settings: settings)
+            }
+        }
     }
 
     private var header: some View {

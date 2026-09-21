@@ -242,7 +242,7 @@ final class ShelfController {
 
     /// Anchored to the chosen corner; the shelf grows away from it.
     private func targetFrame(for panel: NSPanel) -> NSRect {
-        let size = ShelfLayout.size(expanded: store.expanded, count: store.items.count)
+        let size = ShelfLayout.size(expanded: store.expanded, groups: store.groups)
         let area = anchorScreen(for: panel).visibleFrame
         return NSRect(
             x: corner.isLeft ? area.minX + margin : area.maxX - size.width - margin,
