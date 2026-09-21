@@ -115,9 +115,13 @@ final class ShelfDotView: NSView, NSDraggingSource {
         dragging = false
     }
 
+    /// This view only takes the mouse; the icon itself is drawn by the view
+    /// behind it, so that's what the drag should show.
     private func snapshot() -> NSImage? {
-        guard let rep = bitmapImageRepForCachingDisplay(in: bounds) else { return nil }
-        cacheDisplay(in: bounds, to: rep)
+        guard let host = superview else { return nil }
+        let rect = convert(bounds, to: host)
+        guard let rep = host.bitmapImageRepForCachingDisplay(in: rect) else { return nil }
+        host.cacheDisplay(in: rect, to: rep)
         let image = NSImage(size: bounds.size)
         image.addRepresentation(rep)
         return image
@@ -241,6 +245,7 @@ private struct ShelfDot: View {
                     menuProvider: { menu() })
             )
             .animation(.easeOut(duration: 0.14), value: backgroundOpacity)
+            .animation(.easeOut(duration: 0.18), value: isCurrent)
             .help("\(shelf.name) — \(shelf.items.count == 1 ? "1 item" : "\(shelf.items.count) items")")
             .popover(isPresented: $choosingIcon, arrowEdge: .bottom) {
                 ShelfIconPicker(symbol: shelf.symbol) { symbol in
@@ -271,9 +276,10 @@ private struct ShelfDot: View {
                 .fill(Color.primary.opacity(opacity))
                 .frame(width: 6, height: 6)
         case .emoji(let character):
-            Text(character)
-                .font(.system(size: 12))
-                .opacity(opacity)
+            // Only the shelf you're on keeps its colour.
+            if let image = ShelfSymbol.emojiImage(character, pointSize: 12, grey: !isCurrent) {
+                Image(nsImage: image).opacity(opacity)
+            }
         case .symbol(let name):
             Image(systemName: name)
                 .font(.system(size: 11, weight: .medium))

@@ -66,6 +66,8 @@ middle shelf selected.
 - **Click** one to switch. The screenshots slide in from the side.
 - **Drag screenshots** onto one to move them there.
 - **Drag the icons** themselves to reorder your shelves.
+- The shelf you're on is at full strength; the others are dimmed, and their
+  emoji lose their colour.
 - **Right-click** one for Change Shelf Icon, Rename, New Shelf, Save Shelf,
   Open Shelf and Delete Shelf (only when that shelf is empty).
 
@@ -73,7 +75,8 @@ The icon picker has every emoji macOS can draw plus a few hundred symbols, with
 a search field; the bin button clears the icon again.
 
 Right-click a screenshot for Copy, Open in Preview, Save, Delete, and Move to
-Shelf.
+Shelf. Right-click an empty part of the shelf to paste an image or a file from
+the clipboard.
 
 Your shelves are kept in `~/Library/Application Support/ShotShelf`, so they
 survive quitting and updating. Quitting no longer empties the shelf into your

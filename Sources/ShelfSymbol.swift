@@ -1,4 +1,5 @@
 import AppKit
+import CoreImage
 
 /// The little icon on a shelf's dot: an emoji, an SF Symbol, or nothing.
 enum ShelfSymbol: Equatable, Codable {
@@ -101,14 +102,30 @@ enum ShelfSymbol: Equatable, Codable {
                 .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
             return NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(config)
         case .emoji(let character):
-            let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: pointSize)]
-            let text = character as NSString
-            let size = text.size(withAttributes: attributes)
-            let image = NSImage(size: NSSize(width: ceil(size.width), height: ceil(size.height)))
-            image.lockFocus()
-            text.draw(at: .zero, withAttributes: attributes)
-            image.unlockFocus()
-            return image
+            return ShelfSymbol.emojiImage(character, pointSize: pointSize)
         }
+    }
+
+    /// Emoji are colour images, so greying one out means really draining the
+    /// colour rather than asking SwiftUI for a filter.
+    static func emojiImage(_ character: String, pointSize: CGFloat, grey: Bool = false) -> NSImage? {
+        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: pointSize)]
+        let text = character as NSString
+        let size = text.size(withAttributes: attributes)
+        guard size.width > 0, size.height > 0 else { return nil }
+        let image = NSImage(size: NSSize(width: ceil(size.width), height: ceil(size.height)))
+        image.lockFocus()
+        text.draw(at: .zero, withAttributes: attributes)
+        image.unlockFocus()
+        guard grey else { return image }
+
+        guard let tiff = image.tiffRepresentation, let source = CIImage(data: tiff),
+              let filter = CIFilter(name: "CIColorControls") else { return image }
+        filter.setValue(source, forKey: kCIInputImageKey)
+        filter.setValue(0, forKey: kCIInputSaturationKey)
+        guard let output = filter.outputImage else { return image }
+        let grey = NSImage(size: image.size)
+        grey.addRepresentation(NSCIImageRep(ciImage: output))
+        return grey
     }
 }

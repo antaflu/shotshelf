@@ -41,7 +41,11 @@ enum ShelfLayout {
         let extraForTitles = showTitles ? CGFloat(min(groups.count - 1, 2)) * (groupHeader + gap) : 0
         let maxContent = CGFloat(maxRows) * tile + CGFloat(maxRows - 1) * gap + extraForTitles
         let w = pad * 2 + CGFloat(columns) * tile + CGFloat(columns - 1) * gap
-        let h = pad * 2 + headerHeight + gap + min(content, maxContent) + footerHeight
+        // Everything the expanded shelf stacks up, top to bottom: padding, the
+        // header, a gap, the screenshots, a gap, the footer with the gear.
+        // Miss a piece and the screenshots get clipped and start scrolling.
+        let h = pad * 2 + headerHeight + gap + min(content, maxContent)
+            + (gap - hoverRoom) + footerHeight
         return CGSize(width: w, height: h)
     }
 }
