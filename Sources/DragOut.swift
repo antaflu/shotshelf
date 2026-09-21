@@ -274,10 +274,18 @@ struct DragOutArea: NSViewRepresentable {
 final class SelectionCanvasNSView: NSView {
     var onClick: () -> Void = {}
     var selection = MarqueeSelection()
+    var menuProvider: (() -> NSMenu?)?
     private var mouseDownAt: NSPoint = .zero
     private var selecting = false
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func menu(for event: NSEvent) -> NSMenu? { menuProvider?() }
+
+    override func rightMouseDown(with event: NSEvent) {
+        guard let menu = menuProvider?() else { return super.rightMouseDown(with: event) }
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
 
     override func mouseDown(with event: NSEvent) {
         mouseDownAt = event.locationInWindow
@@ -304,6 +312,7 @@ final class SelectionCanvasNSView: NSView {
 struct SelectionCanvas: NSViewRepresentable {
     var onClick: () -> Void
     var selection: MarqueeSelection
+    var menuProvider: () -> NSMenu?
 
     func makeNSView(context: Context) -> SelectionCanvasNSView {
         let view = SelectionCanvasNSView()
@@ -314,5 +323,6 @@ struct SelectionCanvas: NSViewRepresentable {
     func updateNSView(_ view: SelectionCanvasNSView, context: Context) {
         view.onClick = onClick
         view.selection = selection
+        view.menuProvider = menuProvider
     }
 }

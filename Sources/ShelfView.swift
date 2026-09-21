@@ -18,6 +18,8 @@ enum ShelfLayout {
     static let headerHeight: CGFloat = 24
     /// The "Today" / "Last week" labels between groups.
     static let groupHeader: CGFloat = 15
+    /// The strip at the bottom holding the gear.
+    static let footerHeight: CGFloat = 18
     static let maxRows = 4
 
     static func rows(_ count: Int) -> Int {
@@ -39,7 +41,7 @@ enum ShelfLayout {
         let extraForTitles = showTitles ? CGFloat(min(groups.count - 1, 2)) * (groupHeader + gap) : 0
         let maxContent = CGFloat(maxRows) * tile + CGFloat(maxRows - 1) * gap + extraForTitles
         let w = pad * 2 + CGFloat(columns) * tile + CGFloat(columns - 1) * gap
-        let h = pad * 2 + headerHeight + gap + min(content, maxContent)
+        let h = pad * 2 + headerHeight + gap + min(content, maxContent) + footerHeight
         return CGSize(width: w, height: h)
     }
 }
@@ -196,7 +198,7 @@ struct ShelfView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
         .gesture(swipe)
-        .overlay(alignment: .topLeading) { settingsButton.padding(8) }
+        .overlay(alignment: .bottomTrailing) { settingsButton.padding(8) }
     }
 
     /// The top three screenshots form the visible stack.
@@ -235,6 +237,13 @@ struct ShelfView: View {
                 // The gaps between screenshots live inside the scroll view.
                 .background(selectionCanvas)
             }
+            // The gear sits in the bottom-right corner.
+            HStack(spacing: 0) {
+                Spacer()
+                settingsButton
+            }
+            .frame(height: ShelfLayout.footerHeight)
+            .padding(.horizontal, ShelfLayout.hoverRoom)
         }
         .padding(ShelfLayout.pad - ShelfLayout.hoverRoom)
         .background(selectionCanvas)
@@ -265,12 +274,8 @@ struct ShelfView: View {
                 .truncationMode(.tail)
                 .layoutPriority(1)
 
-            // Equal spacers keep the shelves centred between the count and the gear.
             Spacer(minLength: 6)
             ShelfDots(store: store, onSave: onSaveShelf, onOpen: onOpenShelf)
-            Spacer(minLength: 6)
-
-            settingsButton
         }
         .foregroundColor(.secondary)
         .padding(.trailing, 20) // room for the close button
@@ -286,7 +291,8 @@ struct ShelfView: View {
     }
 
     private var selectionCanvas: some View {
-        SelectionCanvas(onClick: { store.clearSelection() }, selection: store.marqueeSelection)
+        SelectionCanvas(onClick: { store.clearSelection() }, selection: store.marqueeSelection,
+                        menuProvider: { ShelfMenus.paste(into: store) })
     }
 
     private var headerTitle: String {

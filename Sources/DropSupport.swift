@@ -111,6 +111,18 @@ enum ShelfDropHandler {
     }
 }
 
+/// The menu you get when right-clicking somewhere on the shelf that isn't a
+/// screenshot: paste whatever is on the clipboard onto this shelf.
+enum ShelfMenus {
+    static func paste(into store: ShelfStore) -> NSMenu {
+        let menu = NSMenu()
+        menu.addAction("Paste", enabled: ShelfDropHandler.canAccept(.general)) {
+            ShelfDropHandler.accept(.general, into: store)
+        }
+        return menu
+    }
+}
+
 /// The panel's content view: hosts the SwiftUI shelf and accepts drops on it.
 final class ShelfDropView: NSView {
     let store: ShelfStore
@@ -131,6 +143,12 @@ final class ShelfDropView: NSView {
     /// Drags that start on the shelf itself are never dropped back onto it.
     private func accepts(_ info: NSDraggingInfo) -> Bool {
         info.draggingSource == nil && ShelfDropHandler.canAccept(info.draggingPasteboard)
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? { ShelfMenus.paste(into: store) }
+
+    override func rightMouseDown(with event: NSEvent) {
+        NSMenu.popUpContextMenu(ShelfMenus.paste(into: store), with: event, for: self)
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {

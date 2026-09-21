@@ -43,6 +43,162 @@ struct ShelfDots: View {
     }
 }
 
+/// A shelf's icon in the header. Everything with a mouse in it is AppKit: a
+/// SwiftUI drop target inside this floating panel isn't reliable, and this is
+/// the same approach the screenshots themselves use.
+final class ShelfDotView: NSView, NSDraggingSource {
+    var onClick: () -> Void = {}
+    var onHover: (Bool) -> Void = { _ in }
+    var onTargeted: (Bool) -> Void = { _ in }
+    var onDropItems: ([URL]) -> Void = { _ in }
+    var onReorder: (UUID) -> Void = { _ in }
+    var menuProvider: (() -> NSMenu?)?
+    var shelfID = UUID()
+    var dragImage: NSImage?
+
+    private var mouseDownAt: NSPoint = .zero
+    private var dragging = false
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        registerForDraggedTypes([.fileURL, .string])
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: .zero,
+                                       options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                       owner: self))
+    }
+
+    override func mouseEntered(with event: NSEvent) { onHover(NSEvent.pressedMouseButtons == 0) }
+    override func mouseExited(with event: NSEvent) { onHover(false) }
+
+    override func menu(for event: NSEvent) -> NSMenu? { menuProvider?() }
+
+    override func rightMouseDown(with event: NSEvent) {
+        guard let menu = menuProvider?() else { return super.rightMouseDown(with: event) }
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.control), let menu = menuProvider?() {
+            NSMenu.popUpContextMenu(menu, with: event, for: self)
+            return
+        }
+        mouseDownAt = event.locationInWindow
+        dragging = false
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard !dragging else { return }
+        let dx = event.locationInWindow.x - mouseDownAt.x
+        let dy = event.locationInWindow.y - mouseDownAt.y
+        guard abs(dx) > 3 || abs(dy) > 3 else { return }
+        dragging = true
+
+        // Dragging the icon itself reorders the shelves.
+        let item = NSPasteboardItem()
+        item.setString("\(ShelfDots.reorderPrefix)\(shelfID.uuidString)", forType: .string)
+        let dragItem = NSDraggingItem(pasteboardWriter: item)
+        dragItem.setDraggingFrame(bounds, contents: dragImage ?? snapshot())
+        beginDraggingSession(with: [dragItem], event: event, source: self)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if !dragging { onClick() }
+        dragging = false
+    }
+
+    private func snapshot() -> NSImage? {
+        guard let rep = bitmapImageRepForCachingDisplay(in: bounds) else { return nil }
+        cacheDisplay(in: bounds, to: rep)
+        let image = NSImage(size: bounds.size)
+        image.addRepresentation(rep)
+        return image
+    }
+
+    func draggingSession(_ session: NSDraggingSession,
+                         sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        context == .withinApplication ? .move : []
+    }
+
+    // MARK: - Taking a drop
+
+    private func payload(_ info: NSDraggingInfo) -> (reorder: UUID?, urls: [URL]) {
+        let pasteboard = info.draggingPasteboard
+        if let text = pasteboard.string(forType: .string), text.hasPrefix(ShelfDots.reorderPrefix) {
+            return (UUID(uuidString: String(text.dropFirst(ShelfDots.reorderPrefix.count))), [])
+        }
+        let urls = pasteboard.readObjects(forClasses: [NSURL.self],
+                                          options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        return (nil, urls)
+    }
+
+    private func operation(for info: NSDraggingInfo) -> NSDragOperation {
+        let content = payload(info)
+        if let id = content.reorder { return id == shelfID ? [] : .move }
+        // The screenshots offer .copy, and an operation the source doesn't
+        // offer is silently refused.
+        return content.urls.isEmpty ? [] : .copy
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        let allowed = operation(for: sender)
+        onTargeted(!allowed.isEmpty)
+        return allowed
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation { operation(for: sender) }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) { onTargeted(false) }
+
+    override func draggingEnded(_ sender: NSDraggingInfo) { onTargeted(false) }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        onTargeted(false)
+        let content = payload(sender)
+        if let id = content.reorder, id != shelfID {
+            onReorder(id)
+            return true
+        }
+        guard !content.urls.isEmpty else { return false }
+        onDropItems(content.urls)
+        return true
+    }
+}
+
+struct ShelfDotArea: NSViewRepresentable {
+    var shelfID: UUID
+    var onClick: () -> Void
+    var onHover: (Bool) -> Void
+    var onTargeted: (Bool) -> Void
+    var onDropItems: ([URL]) -> Void
+    var onReorder: (UUID) -> Void
+    var menuProvider: () -> NSMenu?
+
+    func makeNSView(context: Context) -> ShelfDotView {
+        let view = ShelfDotView()
+        updateNSView(view, context: context)
+        return view
+    }
+
+    func updateNSView(_ view: ShelfDotView, context: Context) {
+        view.shelfID = shelfID
+        view.onClick = onClick
+        view.onHover = onHover
+        view.onTargeted = onTargeted
+        view.onDropItems = onDropItems
+        view.onReorder = onReorder
+        view.menuProvider = menuProvider
+    }
+}
+
 private struct ShelfDot: View {
     let shelf: Shelf
     let index: Int
@@ -60,70 +216,59 @@ private struct ShelfDot: View {
     private static let side: CGFloat = 22
 
     private var backgroundOpacity: Double {
-        if targeted { return 0.28 }
-        if isCurrent { return 0.18 }
+        if targeted { return 0.24 }
         return hovering ? 0.12 : 0
     }
 
     var body: some View {
-        Button { withAnimation(.easeOut(duration: 0.24)) { store.select(index) } } label: {
-            icon
-                .frame(width: Self.side, height: Self.side)
-                .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color.primary.opacity(backgroundOpacity))
-                )
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .background(HoverTracker { hovering = $0 })
-        .animation(.easeOut(duration: 0.14), value: backgroundOpacity)
-        .help("\(shelf.name) — \(shelf.items.count == 1 ? "1 item" : "\(shelf.items.count) items")")
-        .onDrag {
-            NSItemProvider(object: "\(ShelfDots.reorderPrefix)\(shelf.id.uuidString)" as NSString)
-        }
-        .onDrop(of: [.fileURL, .utf8PlainText], isTargeted: $targeted) { providers in
-            receive(providers)
-            return true
-        }
-        .contextMenu {
-            Button("Change Shelf Icon…") { choosingIcon = true }
-            Button("Rename…") { draft = shelf.name; renaming = true }
-            Divider()
-            Button("New Shelf") { store.select(store.addShelf()) }
-                .disabled(!store.canAddShelf)
-            Button("Save Shelf…") { onSave(shelf) }
-            Button("Open Shelf…") { onOpen() }
-            Divider()
-            Button("Delete Shelf") { store.removeShelf(at: index) }
-                .disabled(store.shelves.count < 2 || !shelf.items.isEmpty)
-        }
-        .popover(isPresented: $choosingIcon, arrowEdge: .bottom) {
-            ShelfIconPicker(symbol: shelf.symbol) { symbol in
-                guard store.shelves.indices.contains(index) else { return }
-                store.shelves[index].symbol = symbol
-                choosingIcon = false
+        icon
+            .frame(width: Self.side, height: Self.side)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.primary.opacity(backgroundOpacity))
+            )
+            .overlay(
+                ShelfDotArea(
+                    shelfID: shelf.id,
+                    onClick: { withAnimation(.easeOut(duration: 0.24)) { store.select(index) } },
+                    onHover: { hovering = $0 },
+                    onTargeted: { targeted = $0 },
+                    onDropItems: { receive($0) },
+                    onReorder: { id in
+                        guard let from = store.shelves.firstIndex(where: { $0.id == id }) else { return }
+                        withAnimation(.easeOut(duration: 0.2)) { store.moveShelf(from: from, to: index) }
+                    },
+                    menuProvider: { menu() })
+            )
+            .animation(.easeOut(duration: 0.14), value: backgroundOpacity)
+            .help("\(shelf.name) — \(shelf.items.count == 1 ? "1 item" : "\(shelf.items.count) items")")
+            .popover(isPresented: $choosingIcon, arrowEdge: .bottom) {
+                ShelfIconPicker(symbol: shelf.symbol) { symbol in
+                    guard store.shelves.indices.contains(index) else { return }
+                    store.shelves[index].symbol = symbol
+                    choosingIcon = false
+                }
             }
-        }
-        .popover(isPresented: $renaming, arrowEdge: .bottom) {
-            HStack(spacing: 6) {
-                TextField("Shelf name", text: $draft)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 150)
-                    .onSubmit { commitRename() }
-                Button("Save") { commitRename() }
+            .popover(isPresented: $renaming, arrowEdge: .bottom) {
+                HStack(spacing: 6) {
+                    TextField("Shelf name", text: $draft)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 150)
+                        .onSubmit { commitRename() }
+                    Button("Save") { commitRename() }
+                }
+                .padding(10)
             }
-            .padding(10)
-        }
     }
 
     @ViewBuilder
     private var icon: some View {
-        let opacity = isCurrent ? 1.0 : (hovering ? 0.85 : 0.55)
+        // The shelf you're on is at full strength, the others are dimmed.
+        let opacity = isCurrent ? 1.0 : (hovering ? 0.75 : 0.45)
         switch shelf.symbol {
         case .none:
             Circle()
-                .fill(Color.primary.opacity(isCurrent ? 0.85 : 0.5))
+                .fill(Color.primary.opacity(opacity))
                 .frame(width: 6, height: 6)
         case .emoji(let character):
             Text(character)
@@ -137,40 +282,38 @@ private struct ShelfDot: View {
         }
     }
 
+    private func menu() -> NSMenu {
+        let menu = NSMenu()
+        menu.addAction("Change Shelf Icon…") { choosingIcon = true }
+        menu.addAction("Rename…") { draft = shelf.name; renaming = true }
+        menu.addItem(.separator())
+        menu.addAction("New Shelf", enabled: store.canAddShelf) { store.select(store.addShelf()) }
+        menu.addAction("Save Shelf…") { onSave(shelf) }
+        menu.addAction("Open Shelf…") { onOpen() }
+        menu.addItem(.separator())
+        menu.addAction("Delete Shelf", enabled: store.shelves.count > 1 && shelf.items.isEmpty) {
+            store.removeShelf(at: index)
+        }
+        return menu
+    }
+
     private func commitRename() {
         let name = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         if !name.isEmpty, store.shelves.indices.contains(index) { store.shelves[index].name = name }
         renaming = false
     }
 
-    /// Three kinds of drop: another shelf (reorder), a screenshot from a shelf
-    /// (move it here), or a file from elsewhere (add it here).
-    private func receive(_ providers: [NSItemProvider]) {
-        for provider in providers {
-            if provider.canLoadObject(ofClass: NSString.self) {
-                _ = provider.loadObject(ofClass: NSString.self) { text, _ in
-                    guard let text = text as? String, text.hasPrefix(ShelfDots.reorderPrefix) else { return }
-                    let id = String(text.dropFirst(ShelfDots.reorderPrefix.count))
-                    DispatchQueue.main.async {
-                        guard let from = store.shelves.firstIndex(where: { $0.id.uuidString == id }) else { return }
-                        store.moveShelf(from: from, to: index)
-                    }
-                }
-                continue
-            }
-            _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                guard let url else { return }
-                DispatchQueue.main.async {
-                    let standardized = url.standardizedFileURL
-                    if let item = store.allItems.first(where: { $0.url.standardizedFileURL == standardized }) {
-                        store.move([item], toShelf: index)
-                    } else {
-                        let saved = store.currentIndex
-                        store.currentIndex = index
-                        store.add(url, isReference: true)
-                        store.currentIndex = saved
-                    }
-                }
+    /// Screenshots dragged from a shelf move here; files from elsewhere are added.
+    private func receive(_ urls: [URL]) {
+        for url in urls {
+            let standardized = url.standardizedFileURL
+            if let item = store.allItems.first(where: { $0.url.standardizedFileURL == standardized }) {
+                store.move([item], toShelf: index)
+            } else {
+                let saved = store.currentIndex
+                store.currentIndex = index
+                store.add(url, isReference: true)
+                store.currentIndex = saved
             }
         }
     }
