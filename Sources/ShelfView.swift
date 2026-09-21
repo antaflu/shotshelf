@@ -83,6 +83,8 @@ struct ShelfView: View {
     @ObservedObject var settings: AppSettings
     var onDismiss: () -> Void
     var onSettings: () -> Void
+    var onSaveShelf: (Shelf) -> Void = { _ in }
+    var onOpenShelf: () -> Void = {}
     var onDragChanged: () -> Void
     var onDragEnded: () -> Void
 
@@ -257,7 +259,9 @@ struct ShelfView: View {
                     .frame(width: 18, height: 18)
                 Text(headerTitle)
                     .font(.system(size: 11, weight: .medium))
-                Spacer(minLength: 8)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 4)
             }
             .foregroundColor(.secondary)
             .frame(height: ShelfLayout.headerHeight)
@@ -267,6 +271,8 @@ struct ShelfView: View {
                 withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) { store.expanded = false }
             }
             .help("Collapse")
+
+            ShelfDots(store: store, onSave: onSaveShelf, onOpen: onOpenShelf)
 
             settingsButton
         }
@@ -459,6 +465,7 @@ private struct ShelfTile: View {
                     hotspots: { hotspots(in: $0) },
                     onHotspotClick: { perform($0) },
                     onHotspotHover: { hoveredSpot = $0 },
+                    menuProvider: { contextMenu() },
                     itemID: item.id,
                     selection: store.marqueeSelection)
             )
@@ -484,6 +491,37 @@ private struct ShelfTile: View {
         .background(Capsule().fill(Color.black.opacity(0.5)))
         .background(.ultraThinMaterial, in: Capsule())
         .overlay(Capsule().strokeBorder(Color.white.opacity(0.14), lineWidth: 0.5))
+    }
+
+    /// The native right-click menu. Acts on the whole selection when this
+    /// screenshot is part of it.
+    private func contextMenu() -> NSMenu {
+        let menu = NSMenu()
+        let picked = targets
+        menu.addAction(describe("Copy")) { store.copy(picked) }
+        menu.addAction(describe("Open in Preview")) { store.openInPreview(picked) }
+        menu.addItem(.separator())
+        menu.addAction(describe("Save to \(settings.saveFolder.lastPathComponent)"),
+                       enabled: !picked.contains(where: \.isReference)) {
+            store.disposeEverywhere(picked, action: .save)
+        }
+        menu.addAction(picked.contains(where: \.isReference) ? describe("Remove from Shelf") : describe("Delete")) {
+            store.disposeEverywhere(picked, action: .trash)
+        }
+        menu.addItem(.separator())
+
+        let move = NSMenu()
+        for (index, shelf) in store.shelves.enumerated() where index != store.currentIndex {
+            move.addAction(shelf.name) { store.move(picked, toShelf: index) }
+        }
+        move.addAction("New Shelf", enabled: store.canAddShelf) {
+            let index = store.addShelf()
+            store.move(picked, toShelf: index)
+            store.select(index)
+        }
+        let moveItem = menu.addItem(withTitle: "Move to Shelf", action: nil, keyEquivalent: "")
+        moveItem.submenu = move
+        return menu
     }
 
     private var helpText: String {

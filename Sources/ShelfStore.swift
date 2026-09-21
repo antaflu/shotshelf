@@ -16,10 +16,35 @@ struct ShelfItem: Identifiable, Equatable {
     static func == (a: ShelfItem, b: ShelfItem) -> Bool { a.id == b.id }
 }
 
-/// Holds the screenshots and images currently on the shelf, and saves or
-/// trashes the ones ShotShelf owns.
+/// One shelf: a name, an icon and what's on it.
+struct Shelf: Identifiable {
+    let id: UUID
+    var name: String
+    var symbol: ShelfSymbol
+    var items: [ShelfItem]
+
+    init(id: UUID = UUID(), name: String, symbol: ShelfSymbol = .none, items: [ShelfItem] = []) {
+        self.id = id
+        self.name = name
+        self.symbol = symbol
+        self.items = items
+    }
+}
+
+/// Holds every shelf, and saves or trashes the files ShotShelf owns.
 final class ShelfStore: ObservableObject {
-    @Published private(set) var items: [ShelfItem] = []
+    @Published var shelves: [Shelf] = [Shelf(name: "Shelf 1")]
+    @Published var currentIndex = 0
+
+    /// What's on the shelf you're looking at.
+    var items: [ShelfItem] {
+        get { shelves.indices.contains(currentIndex) ? shelves[currentIndex].items : [] }
+        set {
+            guard shelves.indices.contains(currentIndex) else { return }
+            shelves[currentIndex].items = newValue
+        }
+    }
+    var current: Shelf { shelves.indices.contains(currentIndex) ? shelves[currentIndex] : shelves[0] }
     @Published var expanded: Bool = false
     @Published var hovering: Bool = false
     /// True while something droppable is dragged over the shelf.
@@ -51,6 +76,48 @@ final class ShelfStore: ObservableObject {
     }
 
     var isEmpty: Bool { items.isEmpty }
+    /// Every screenshot on every shelf, e.g. to check a file is still in use.
+    var allItems: [ShelfItem] { shelves.flatMap(\.items) }
+
+    // MARK: - Shelves
+
+    /// More than a handful and the header runs out of room.
+    static let maxShelves = 6
+
+    var canAddShelf: Bool { shelves.count < ShelfStore.maxShelves }
+
+    func select(_ index: Int) {
+        guard shelves.indices.contains(index), index != currentIndex else { return }
+        selection.removeAll()
+        currentIndex = index
+    }
+
+    @discardableResult
+    func addShelf() -> Int {
+        guard canAddShelf else { return currentIndex }
+        shelves.append(Shelf(name: "Shelf \(shelves.count + 1)"))
+        return shelves.count - 1
+    }
+
+    /// Only ever removes an empty shelf, and never the last one.
+    func removeShelf(at index: Int) {
+        guard shelves.count > 1, shelves.indices.contains(index), shelves[index].items.isEmpty else { return }
+        shelves.remove(at: index)
+        currentIndex = min(currentIndex, shelves.count - 1)
+    }
+
+    func move(_ moving: [ShelfItem], toShelf index: Int) {
+        guard shelves.indices.contains(index) else { return }
+        let ids = Set(moving.map(\.id))
+        var moved: [ShelfItem] = []
+        for shelfIndex in shelves.indices {
+            moved += shelves[shelfIndex].items.filter { ids.contains($0.id) }
+            shelves[shelfIndex].items.removeAll { ids.contains($0.id) }
+        }
+        shelves[index].items += moved
+        selection.subtract(ids)
+        if items.isEmpty { expanded = false }
+    }
 
     // MARK: - Adding
 
@@ -67,9 +134,9 @@ final class ShelfStore: ObservableObject {
     // MARK: - Grouping by date
 
     /// Screenshots grouped the way Photos does it: Today, Yesterday, Last week,
-    /// 2 weeks ago, and months further back. Oldest first, like the shelf itself.
+    /// 2 weeks ago, and months further back. Newest first.
     var groups: [ShelfGroup] {
-        let sorted = items.sorted { $0.date < $1.date }
+        let sorted = items.sorted { $0.date > $1.date }
         var result: [ShelfGroup] = []
         for item in sorted {
             let title = ShelfGroup.title(for: item.date)
@@ -128,6 +195,17 @@ final class ShelfStore: ObservableObject {
     /// so it never trashes anything. Dragged-in files are just let go.
     func flushAll() {
         dispose(items, action: .save)
+    }
+
+    /// Takes screenshots off every shelf, wherever they are.
+    func disposeEverywhere(_ targets: [ShelfItem], action: DisposeAction) {
+        let ids = Set(targets.map(\.id))
+        let saved = currentIndex
+        for index in shelves.indices where shelves[index].items.contains(where: { ids.contains($0.id) }) {
+            currentIndex = index
+            dispose(shelves[index].items.filter { ids.contains($0.id) }, action: action)
+        }
+        currentIndex = min(saved, shelves.count - 1)
     }
 
     /// Takes screenshots off the shelf. Files that could not be saved or trashed

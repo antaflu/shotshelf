@@ -23,18 +23,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         redirectScreenshots()
 
         controller.onOpenSettings = { [weak self] in self?.openSettings() }
+        controller.onSaveShelf = { [weak self] shelf in self?.saveShelfFile(shelf) }
+        controller.onOpenShelf = { [weak self] in self?.openShelf() }
         ToggleTriggers.shared.onToggle = { [weak self] in self?.controller.toggle() }
         ToggleTriggers.shared.onShow = { [weak self] in self?.controller.show(allowEmpty: true) }
         ToggleTriggers.shared.onHide = { [weak self] in self?.controller.hide() }
         ToggleTriggers.shared.start()
 
         watcher.onNewScreenshot = { [weak self] url in self?.handleNewScreenshot(url) }
-        // Screenshots left over from a previous session go back on the shelf.
-        for url in watcher.existingFiles() { controller.store.add(url) }
-        // So are images that were dropped onto the shelf.
-        let dropped = (try? FileManager.default.contentsOfDirectory(
-            at: ShelfStore.droppedURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
-        for url in dropped.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) { controller.store.add(url) }
+        // Your shelves are exactly as you left them, updates included.
+        ShelfStorage.load(into: controller.store)
+        adoptLooseFiles()
         watcher.start()
         if !controller.store.isEmpty { controller.show() }
 
@@ -56,6 +55,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             .store(in: &cancellables)
 
         updater.startAutomaticChecks()
+
+        // Keep the shelves on disk in step with what you see.
+        controller.store.objectWillChange
+            .debounce(for: .seconds(1), scheduler: RunLoop.main)
+            .sink { [weak self] in
+                guard let self else { return }
+                ShelfStorage.save(self.controller.store)
+            }
+            .store(in: &cancellables)
     }
 
     /// Reopening from Finder or the Dock shows Settings, so they are always
@@ -68,8 +76,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         watcher.stop()
         restoreScreenshotSettings()
-        controller.store.flushAll()
+        ShelfStorage.save(controller.store)
         updater.installOnQuitIfReady()
+    }
+
+    /// Opening a .shelf file from Finder adds it as a new shelf.
+    func application(_ sender: NSApplication, open urls: [URL]) {
+        for url in urls where url.pathExtension.lowercased() == ShelfStorage.fileExtension {
+            openShelfFile(url)
+        }
+    }
+
+    /// Screenshots and dropped images that no shelf knows about, e.g. after a
+    /// crash, are put back on the current shelf instead of being left behind.
+    private func adoptLooseFiles() {
+        let known = Set(controller.store.allItems.map(\.url.standardizedFileURL))
+        var loose = watcher.existingFiles()
+        let dropped = (try? FileManager.default.contentsOfDirectory(
+            at: ShelfStore.droppedURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        loose += dropped.sorted { $0.lastPathComponent < $1.lastPathComponent }
+        for url in loose where !known.contains(url.standardizedFileURL) {
+            controller.store.add(url)
+        }
     }
 
     // MARK: - Nieuw screenshot
@@ -203,6 +231,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         flush.isEnabled = !controller.store.isEmpty
         menu.autoenablesItems = false
 
+        menu.addItem(.separator())
+        let save = menu.addItem(withTitle: "Save Shelf…", action: #selector(saveShelf), keyEquivalent: "")
+        save.target = self
+        save.isEnabled = !controller.store.isEmpty
+        menu.addItem(withTitle: "Open Shelf…", action: #selector(openShelf), keyEquivalent: "").target = self
+
         if case .ready(let version) = updater.state {
             menu.addItem(.separator())
             menu.addItem(withTitle: "Install Update \(version) and Relaunch",
@@ -216,6 +250,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func toggleShelf() { controller.toggle() }
+
+    @objc private func saveShelf() { saveShelfFile(controller.store.current) }
+
+    private func saveShelfFile(_ shelf: Shelf) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "\(shelf.name).\(ShelfStorage.fileExtension)"
+        panel.prompt = "Save"
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try ShelfStorage.export(shelf, to: url)
+        } catch {
+            present(error)
+        }
+    }
+
+    @objc private func openShelf() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Open"
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        openShelfFile(url)
+    }
+
+    private func openShelfFile(_ url: URL) {
+        do {
+            let shelf = try ShelfStorage.importShelf(from: url)
+            controller.store.shelves.append(shelf)
+            controller.store.select(controller.store.shelves.count - 1)
+            controller.store.expanded = true
+            controller.show()
+        } catch {
+            present(error)
+        }
+    }
+
+    private func present(_ error: Error) {
+        let alert = NSAlert(error: error)
+        alert.messageText = error.localizedDescription
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+    }
     @objc private func flushAll() { controller.dismiss() }
     @objc private func installUpdate() { updater.installAndRelaunch() }
     @objc private func quit() { NSApp.terminate(nil) }

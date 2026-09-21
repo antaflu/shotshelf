@@ -44,7 +44,7 @@ Requires macOS 13 or later. Universal build (Apple silicon and Intel).
   only referenced: closing or deleting them just takes them off the shelf, the
   original stays put. Images without a file (e.g. from a browser) are saved
   like screenshots.
-- **Grouped by date** when the shelf holds more than one day: Today,
+- **Newest first**, grouped by date when the shelf holds more than one day: Today,
   Yesterday, Earlier this week, Last week, 2 weeks ago, and month names
   further back. With everything from a single day, no labels appear.
 - **Collapse** the expanded shelf by clicking its header: the chevron, the
@@ -56,6 +56,24 @@ screenshot stays on the shelf.
 
 Swipe gestures live on the shelf's border and caption (and on the header when
 expanded), so dragging and swiping never get in each other's way.
+
+## Shelves
+
+The dots in the header are your shelves — up to six. Click one to switch, drag
+screenshots onto one to move them there, right-click one to change its icon
+(emoji or symbol), rename it, add or remove one, or save and open `.shelf`
+files.
+
+Right-click a screenshot for Copy, Open in Preview, Save, Delete, and Move to
+Shelf.
+
+Your shelves are kept in `~/Library/Application Support/ShotShelf`, so they
+survive quitting and updating. Quitting no longer empties the shelf into your
+save folder; it stays as you left it.
+
+A `.shelf` file holds a copy of every image plus the shelf's name and icon, so
+it keeps working on another Mac. Save one from the menu bar icon or a shelf's
+right-click menu, and open it by double-clicking it in Finder.
 
 ## Settings
 

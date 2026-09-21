@@ -59,7 +59,7 @@ struct SettingsView: View {
                 Picker("Closing the shelf", selection: $settings.closeShelfAction) {
                     ForEach(DisposeAction.allCases) { Text($0.label).tag($0) }
                 }
-                Text("Screenshots land in this folder when you close them. Trashed screenshots can still be recovered from the Trash. With Move to Trash, screenshots only show the Delete button, since × would do the same. Quitting ShotShelf always saves.")
+                Text("Screenshots land in this folder when you close them. Trashed screenshots can still be recovered from the Trash. With Move to Trash, screenshots only show the Delete button, since × would do the same. Quitting ShotShelf leaves your shelves as they are.")
                     .font(.caption).foregroundColor(.secondary)
             }
 

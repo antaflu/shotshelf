@@ -98,6 +98,8 @@ final class DragOutNSView: NSView, NSDraggingSource {
     var hotspots: (NSSize) -> [Hotspot] = { _ in [] }
     var onHotspotClick: (String) -> Void = { _ in }
     var onHotspotHover: (String?) -> Void = { _ in }
+    /// The right-click menu for this screenshot.
+    var menuProvider: (() -> NSMenu?)?
     /// Set for screenshot tiles; nil for the stack, which can't be selected.
     var itemID: UUID? {
         didSet { if itemID != nil { TileRegistry.shared.register(self) } }
@@ -113,6 +115,20 @@ final class DragOutNSView: NSView, NSDraggingSource {
 
     /// The panel is never active; without this the first click would only focus it.
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func menu(for event: NSEvent) -> NSMenu? { menuProvider?() }
+
+    /// Pop the menu up ourselves: a real macOS menu in its own window at the
+    /// pointer, rather than anything drawn inside the shelf.
+    private func popUpMenu(with event: NSEvent) -> Bool {
+        guard let menu = menuProvider?() else { return false }
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+        return true
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        if !popUpMenu(with: event) { super.rightMouseDown(with: event) }
+    }
 
     private func hotspot(at windowPoint: NSPoint) -> String? {
         let point = convert(windowPoint, from: nil)
@@ -144,6 +160,8 @@ final class DragOutNSView: NSView, NSDraggingSource {
     }
 
     override func mouseDown(with event: NSEvent) {
+        // Control-click is a right-click.
+        if event.modifierFlags.contains(.control), popUpMenu(with: event) { return }
         mouseDownAt = event.locationInWindow
         mode = .pending
         holdTimer?.invalidate()
@@ -227,6 +245,7 @@ struct DragOutArea: NSViewRepresentable {
     var hotspots: (NSSize) -> [Hotspot] = { _ in [] }
     var onHotspotClick: (String) -> Void = { _ in }
     var onHotspotHover: (String?) -> Void = { _ in }
+    var menuProvider: (() -> NSMenu?)?
     var itemID: UUID?
     var selection = MarqueeSelection()
 
@@ -244,6 +263,7 @@ struct DragOutArea: NSViewRepresentable {
         view.hotspots = hotspots
         view.onHotspotClick = onHotspotClick
         view.onHotspotHover = onHotspotHover
+        view.menuProvider = menuProvider
         view.itemID = itemID
         view.selection = selection
     }

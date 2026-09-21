@@ -12,6 +12,8 @@ final class ShelfPanelWindow: NSPanel {
 final class ShelfController {
     let store = ShelfStore()
     var onOpenSettings: () -> Void = {}
+    var onSaveShelf: (Shelf) -> Void = { _ in }
+    var onOpenShelf: () -> Void = {}
 
     private let settings = AppSettings.shared
     private var panel: ShelfPanelWindow?
@@ -228,6 +230,8 @@ final class ShelfController {
             settings: settings,
             onDismiss: { [weak self] in self?.dismiss() },
             onSettings: { [weak self] in self?.onOpenSettings() },
+            onSaveShelf: { [weak self] shelf in self?.onSaveShelf(shelf) },
+            onOpenShelf: { [weak self] in self?.onOpenShelf() },
             onDragChanged: { [weak self] in self?.dragChanged() },
             onDragEnded: { [weak self] in self?.dragEnded() })
         let hosting = NSHostingView(rootView: root)

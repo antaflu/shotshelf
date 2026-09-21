@@ -65,6 +65,25 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>NSNetworkVolumesUsageDescription</key>
     <string>ShotShelf moves your screenshots to the folder you chose in Settings.</string>
     <key>ShotShelfUpdateRepo</key><string>$UPDATE_REPO</string>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key><string>ShotShelf Shelf</string>
+            <key>CFBundleTypeRole</key><string>Viewer</string>
+            <key>LSHandlerRank</key><string>Owner</string>
+            <key>LSItemContentTypes</key><array><string>nl.shotshelf.shelf</string></array>
+        </dict>
+    </array>
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key><string>nl.shotshelf.shelf</string>
+            <key>UTTypeDescription</key><string>ShotShelf Shelf</string>
+            <key>UTTypeConformsTo</key><array><string>public.data</string><string>public.zip-archive</string></array>
+            <key>UTTypeTagSpecification</key>
+            <dict><key>public.filename-extension</key><array><string>shelf</string></array></dict>
+        </dict>
+    </array>
     <key>NSHumanReadableCopyright</key><string>ShotShelf</string>
 </dict>
 </plist>
