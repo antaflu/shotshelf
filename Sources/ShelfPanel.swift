@@ -8,6 +8,37 @@ final class ShelfPanelWindow: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+/// The size of the visible shelf inside its window. Changes of size are
+/// animated here, in SwiftUI, together with the screenshots sliding in, rather
+/// than by animating the window: two animation systems at once drift apart and
+/// look jumpy.
+final class ShelfFrame: ObservableObject {
+    @Published var size: CGSize = ShelfLayout.collapsed
+    @Published var corner: ScreenCorner = .bottomRight
+
+    /// The shelf hugs the corner it's anchored to while the window is larger.
+    var alignment: Alignment {
+        switch corner {
+        case .topLeft: return .topLeading
+        case .topRight: return .topTrailing
+        case .bottomLeft: return .bottomLeading
+        case .bottomRight: return .bottomTrailing
+        }
+    }
+}
+
+struct ShelfRoot: View {
+    @ObservedObject var frame: ShelfFrame
+    let shelf: ShelfView
+
+    var body: some View {
+        ZStack(alignment: frame.alignment) {
+            Color.clear
+            shelf.frame(width: frame.size.width, height: frame.size.height)
+        }
+    }
+}
+
 /// Shows, positions, hides and swipes away the shelf.
 final class ShelfController {
     let store = ShelfStore()
@@ -17,6 +48,9 @@ final class ShelfController {
 
     private let settings = AppSettings.shared
     private var panel: ShelfPanelWindow?
+    let frameModel = ShelfFrame()
+    private var layoutGeneration = 0
+    private var shadowTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
     private var dragOrigin: NSPoint?
     private var dragStartMouse: NSPoint?
@@ -94,6 +128,9 @@ final class ShelfController {
         }
         store.hovering = false
         let target = targetFrame(for: panel)
+        layoutGeneration += 1
+        frameModel.corner = corner
+        frameModel.size = target.size
         if !reversing {
             panel.setFrame(target.offsetBy(dx: awayDirection * (target.width + 40), dy: 0), display: false)
             panel.alphaValue = 0
@@ -234,7 +271,7 @@ final class ShelfController {
             onOpenShelf: { [weak self] in self?.onOpenShelf() },
             onDragChanged: { [weak self] in self?.dragChanged() },
             onDragEnded: { [weak self] in self?.dragEnded() })
-        let hosting = NSHostingView(rootView: root)
+        let hosting = NSHostingView(rootView: ShelfRoot(frame: frameModel, shelf: root))
         hosting.frame = NSRect(origin: .zero, size: ShelfLayout.collapsed)
         let dropView = ShelfDropView(store: store, content: hosting)
         dropView.onDropAccepted = { [weak self] in self?.droppedDuringReveal = true }
@@ -270,16 +307,56 @@ final class ShelfController {
             return
         }
         let target = targetFrame(for: panel)
-        guard target != panel.frame else { return }
-        if animated {
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.24
-                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                panel.animator().setFrame(target, display: true)
-            }
-        } else {
+        frameModel.corner = corner
+        guard target != panel.frame || frameModel.size != target.size else { return }
+        layoutGeneration += 1
+        let generation = layoutGeneration
+
+        guard animated else {
             panel.setFrame(target, display: true)
+            frameModel.size = target.size
+            panel.invalidateShadow()
+            return
         }
-        panel.invalidateShadow()
+
+        // 1. Make the window big enough for both sizes, instantly. The visible
+        //    shelf is pinned to the corner, so nothing on screen moves.
+        let room = panel.frame.union(target)
+        if room != panel.frame { resize(panel, to: room) }
+        // 2. Let SwiftUI grow or shrink the shelf, in step with the screenshots.
+        withAnimation(.easeOut(duration: Self.resizeDuration)) { frameModel.size = target.size }
+        followShadow(for: Self.resizeDuration + 0.06)
+        // 3. Once it has settled, trim the window back to the shelf.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.resizeDuration + 0.04) { [weak self] in
+            guard let self, generation == self.layoutGeneration,
+                  self.dragOrigin == nil, !self.slidingOut, panel.isVisible else { return }
+            self.resize(panel, to: self.targetFrame(for: panel))
+            panel.invalidateShadow()
+        }
+    }
+
+    /// Resizes the window without a single frame where the shelf sits in the
+    /// wrong spot: SwiftUI would otherwise draw once at the old position before
+    /// catching up with the corner it's pinned to.
+    private func resize(_ panel: NSPanel, to frame: NSRect) {
+        panel.disableScreenUpdatesUntilFlush()
+        panel.setFrame(frame, display: false)
+        panel.contentView?.layoutSubtreeIfNeeded()
+        panel.displayIfNeeded()
+    }
+
+    static let resizeDuration: TimeInterval = 0.24
+
+    /// The window shadow is traced from what's drawn, so refresh it while the
+    /// shelf changes size.
+    private func followShadow(for seconds: TimeInterval) {
+        shadowTimer?.invalidate()
+        let end = Date().addingTimeInterval(seconds)
+        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] timer in
+            self?.panel?.invalidateShadow()
+            if Date() >= end { timer.invalidate() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        shadowTimer = timer
     }
 }
