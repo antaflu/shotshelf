@@ -56,14 +56,17 @@ Dragged screenshots are offered both as a file and as plain image data, so
 Finder, chat apps and editors all accept them. Dragging always copies; the
 screenshot stays on the shelf.
 
-Swipe gestures live on the shelf's border and caption (and on the header when
-expanded), so dragging and swiping never get in each other's way.
+Swipe the shelf away by its border: the edge and caption when collapsed, and
+the edge, header and bottom strip when open. Drag a selection rectangle from
+the gaps between screenshots. That way dragging, selecting and swiping never
+get in each other's way.
 
 ## Shelves
 
 The icons in the middle of the header are your shelves — up to six. A fresh
-install starts with three: **Starred** on the left and two plain ones, with the
-middle shelf selected.
+install starts with three — **Starred**, **Shelf 1** and **Shelf 2** — and
+opens on Shelf 1. New shelves are numbered on from there; names you give a
+shelf yourself are kept.
 
 - **Click** one to switch. The screenshots slide in from the side.
 - **Drag screenshots** onto one to move them there.

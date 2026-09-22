@@ -254,7 +254,8 @@ struct ShelfView: View {
             .padding(.horizontal, ShelfLayout.hoverRoom)
         }
         .padding(ShelfLayout.pad - ShelfLayout.hoverRoom)
-        .background(selectionCanvas)
+        // The border and the footer swipe the shelf away, as on the collapsed shelf.
+        .background(borderCanvas)
     }
 
     private func grid(for items: [ShelfItem]) -> some View {
@@ -313,6 +314,12 @@ struct ShelfView: View {
         .frame(maxWidth: .infinity)
         .frame(height: ShelfLayout.tile)
         .allowsHitTesting(false)
+    }
+
+    private var borderCanvas: some View {
+        SelectionCanvas(onClick: { store.clearSelection() }, selection: store.marqueeSelection,
+                        menuProvider: { ShelfMenus.paste(into: store) },
+                        onSwipeChanged: onDragChanged, onSwipeEnded: onDragEnded)
     }
 
     private var selectionCanvas: some View {

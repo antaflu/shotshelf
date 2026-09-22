@@ -281,12 +281,16 @@ struct DragOutArea: NSViewRepresentable {
     }
 }
 
-/// Empty space on the expanded shelf: a click clears the selection, pressing
-/// and moving draws a selection rectangle.
+/// Empty space on the expanded shelf. A click clears the selection. Pressing
+/// and moving draws a selection rectangle, or, for the shelf's border, swipes
+/// the whole shelf away (the same as grabbing the collapsed shelf's edge).
 final class SelectionCanvasNSView: NSView {
     var onClick: () -> Void = {}
     var selection = MarqueeSelection()
     var menuProvider: (() -> NSMenu?)?
+    /// Set for the border: dragging swipes the shelf instead of selecting.
+    var onSwipeChanged: (() -> Void)?
+    var onSwipeEnded: (() -> Void)?
     private var mouseDownAt: NSPoint = .zero
     private var selecting = false
 
@@ -312,13 +316,21 @@ final class SelectionCanvasNSView: NSView {
             let dy = event.locationInWindow.y - mouseDownAt.y
             guard abs(dx) > 3 || abs(dy) > 3 else { return }
             selecting = true
-            selection.began(event.modifierFlags.contains(.command))
+            if onSwipeChanged == nil { selection.began(event.modifierFlags.contains(.command)) }
         }
-        selection.update(from: mouseDownAt, to: event)
+        if let onSwipeChanged {
+            onSwipeChanged()
+        } else {
+            selection.update(from: mouseDownAt, to: event)
+        }
     }
 
     override func mouseUp(with event: NSEvent) {
-        if selecting { selection.ended() } else { onClick() }
+        if selecting {
+            if let onSwipeEnded { onSwipeEnded() } else { selection.ended() }
+        } else {
+            onClick()
+        }
         selecting = false
     }
 }
@@ -327,6 +339,8 @@ struct SelectionCanvas: NSViewRepresentable {
     var onClick: () -> Void
     var selection: MarqueeSelection
     var menuProvider: () -> NSMenu?
+    var onSwipeChanged: (() -> Void)? = nil
+    var onSwipeEnded: (() -> Void)? = nil
 
     func makeNSView(context: Context) -> SelectionCanvasNSView {
         let view = SelectionCanvasNSView()
@@ -338,5 +352,7 @@ struct SelectionCanvas: NSViewRepresentable {
         view.onClick = onClick
         view.selection = selection
         view.menuProvider = menuProvider
+        view.onSwipeChanged = onSwipeChanged
+        view.onSwipeEnded = onSwipeEnded
     }
 }

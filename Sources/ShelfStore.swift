@@ -132,8 +132,28 @@ final class ShelfStore: ObservableObject {
     @discardableResult
     func addShelf() -> Int {
         guard canAddShelf else { return currentIndex }
-        shelves.append(Shelf(name: "Shelf \(shelves.count + 1)"))
+        shelves.append(Shelf(name: ShelfStore.nextShelfName(in: shelves)))
         return shelves.count - 1
+    }
+
+    /// Starred doesn't count: Starred, Shelf 1, Shelf 2, …
+    static func nextShelfName(in shelves: [Shelf]) -> String {
+        "Shelf \(shelves.filter { !$0.isStarredShelf }.count + 1)"
+    }
+
+    /// Keeps the automatic names in order (Shelf 1, Shelf 2, …) after shelves
+    /// were added, removed or reordered. Names you gave yourself are left alone.
+    static func renumberDefaultNames(_ shelves: inout [Shelf]) {
+        var number = 0
+        for index in shelves.indices where !shelves[index].isStarredShelf {
+            number += 1
+            if isDefaultName(shelves[index].name) { shelves[index].name = "Shelf \(number)" }
+        }
+    }
+
+    static func isDefaultName(_ name: String) -> Bool {
+        let parts = name.split(separator: " ")
+        return parts.count == 2 && parts[0] == "Shelf" && Int(parts[1]) != nil
     }
 
     /// Only ever removes an empty shelf, never the last one, and never Starred.
@@ -141,6 +161,7 @@ final class ShelfStore: ObservableObject {
         guard shelves.count > 1, shelves.indices.contains(index), shelves[index].items.isEmpty,
               !shelves[index].isStarredShelf else { return }
         shelves.remove(at: index)
+        ShelfStore.renumberDefaultNames(&shelves)
         currentIndex = min(currentIndex, shelves.count - 1)
     }
 
@@ -149,6 +170,7 @@ final class ShelfStore: ObservableObject {
         let current = shelves[currentIndex].id
         let shelf = shelves.remove(at: from)
         shelves.insert(shelf, at: to)
+        ShelfStore.renumberDefaultNames(&shelves)
         currentIndex = shelves.firstIndex { $0.id == current } ?? currentIndex
     }
 

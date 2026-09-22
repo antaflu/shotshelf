@@ -105,8 +105,9 @@ enum ShelfStorage {
         }
         // Three shelves is the starting point, so top up anything short of it.
         while shelves.count < ShelfStore.defaultShelves().count {
-            shelves.append(Shelf(name: "Shelf \(shelves.count)"))
+            shelves.append(Shelf(name: ShelfStore.nextShelfName(in: shelves)))
         }
+        ShelfStore.renumberDefaultNames(&shelves)
         store.shelves = shelves
         store.currentIndex = index
     }
