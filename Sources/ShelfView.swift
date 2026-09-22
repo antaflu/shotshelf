@@ -369,8 +369,9 @@ private struct ShelfTile: View {
     @ObservedObject var settings: AppSettings
     @State private var hovering = false
     @State private var hoveredSpot: String?
-    @State private var justCopied = false
-    @State private var copyToken = 0
+    private var justCopied: Bool { store.justCopied.contains(item.id) }
+    /// On other shelves, a starred screenshot carries a small star.
+    private var showsStar: Bool { item.isStarred && !store.current.isStarredShelf }
 
     private enum Spot {
         static let copy = "copy", view = "view", delete = "delete", close = "close"
@@ -434,23 +435,18 @@ private struct ShelfTile: View {
 
     private func copy() {
         store.copy(targets)
-        justCopied = true
-        copyToken += 1
-        let token = copyToken
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            if token == copyToken { justCopied = false }
-        }
     }
 
-    /// A plain click copies: the whole selection if this screenshot is part of
-    /// it, otherwise just this one.
+    /// Clicking selects, as in Finder: ⌘ adds or removes, ⇧ selects a range.
+    /// Then space previews and ⌘C copies.
     private func click(_ flags: NSEvent.ModifierFlags) {
         if flags.contains(.command) {
             store.toggleSelection(item)
-            return
+        } else if flags.contains(.shift) {
+            store.selectRange(to: item)
+        } else {
+            store.selectOnly(item)
         }
-        if !(selected && targets.count > 1) { store.clearSelection() }
-        copy()
     }
 
     var body: some View {
@@ -464,12 +460,19 @@ private struct ShelfTile: View {
                     .strokeBorder(Color.accentColor, lineWidth: selected ? 2 : 0)
             )
             .overlay(alignment: .topLeading) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.white, Color.accentColor)
-                    .padding(Self.inset)
-                    .opacity(selected ? 1 : 0)
-                    .scaleEffect(selected ? 1 : 0.7)
+                ZStack {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundColor(.white)
+                        .shadow(color: .black.opacity(0.5), radius: 1.5, x: 0, y: 0.5)
+                        .opacity(showsStar && !selected ? 0.95 : 0)
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.white, Color.accentColor)
+                        .opacity(selected ? 1 : 0)
+                        .scaleEffect(selected ? 1 : 0.7)
+                }
+                .padding(Self.inset)
             }
             // The buttons stay in place and fade, so hovering feels soft.
             .overlay {
@@ -535,6 +538,13 @@ private struct ShelfTile: View {
         menu.addAction(describe("Copy")) { store.copy(picked) }
         menu.addAction(describe("Open in Preview")) { store.openInPreview(picked) }
         menu.addItem(.separator())
+        if store.starredShelfIndex != nil {
+            let allStarred = picked.allSatisfy(\.isStarred)
+            menu.addAction(allStarred ? "Remove from Starred" : "Add to Starred") {
+                store.setStarred(picked, !allStarred)
+            }
+            menu.addItem(.separator())
+        }
         menu.addAction(describe("Save to \(settings.saveFolder.lastPathComponent)"),
                        enabled: !picked.contains(where: \.isReference)) {
             store.disposeEverywhere(picked, action: .save)
@@ -545,7 +555,7 @@ private struct ShelfTile: View {
         menu.addItem(.separator())
 
         let move = NSMenu()
-        for (index, shelf) in store.shelves.enumerated() where index != store.currentIndex {
+        for (index, shelf) in store.shelves.enumerated() where index != store.currentIndex && !shelf.isStarredShelf {
             move.addAction(shelf.name) { store.move(picked, toShelf: index) }
         }
         move.addAction("New Shelf", enabled: store.canAddShelf) {
@@ -571,7 +581,7 @@ private struct ShelfTile: View {
         default:
             let name = item.isReference ? "\(item.url.lastPathComponent) — \(item.url.deletingLastPathComponent().path)"
                                         : item.url.lastPathComponent
-            return "\(name)\nClick to copy, double-click to open"
+            return "\(name)\nClick to select · Space to preview · ⌘C to copy · double-click to open"
         }
     }
 

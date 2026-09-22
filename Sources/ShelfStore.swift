@@ -12,6 +12,8 @@ struct ShelfItem: Identifiable, Equatable {
     /// A file you dragged in from somewhere on disk. ShotShelf only points to
     /// it: closing or trashing just takes it off the shelf, the original stays.
     var isReference = false
+    /// Shown on Starred as well as on its own shelf.
+    var isStarred = false
 
     static func == (a: ShelfItem, b: ShelfItem) -> Bool { a.id == b.id }
 }
@@ -21,13 +23,18 @@ struct Shelf: Identifiable {
     let id: UUID
     var name: String
     var symbol: ShelfSymbol
+    /// What was put on this shelf itself. For Starred, see `ShelfStore.items`.
     var items: [ShelfItem]
+    /// The Starred shelf also shows every starred screenshot from other shelves.
+    var isStarredShelf: Bool
 
-    init(id: UUID = UUID(), name: String, symbol: ShelfSymbol = .none, items: [ShelfItem] = []) {
+    init(id: UUID = UUID(), name: String, symbol: ShelfSymbol = .none, items: [ShelfItem] = [],
+         isStarredShelf: Bool = false) {
         self.id = id
         self.name = name
         self.symbol = symbol
         self.items = items
+        self.isStarredShelf = isStarredShelf
     }
 }
 
@@ -36,7 +43,8 @@ final class ShelfStore: ObservableObject {
     /// Starred on the left, then two plain shelves; the middle one is the one
     /// you start on.
     static func defaultShelves() -> [Shelf] {
-        [Shelf(name: "Starred", symbol: .symbol("star.fill")), Shelf(name: "Shelf 1"), Shelf(name: "Shelf 2")]
+        [Shelf(name: "Starred", symbol: .symbol("star.fill"), isStarredShelf: true),
+         Shelf(name: "Shelf 1"), Shelf(name: "Shelf 2")]
     }
     static let defaultIndex = 1
 
@@ -44,20 +52,32 @@ final class ShelfStore: ObservableObject {
     @Published var currentIndex = ShelfStore.defaultIndex
 
     /// What's on the shelf you're looking at.
-    var items: [ShelfItem] {
-        get { shelves.indices.contains(currentIndex) ? shelves[currentIndex].items : [] }
-        set {
-            guard shelves.indices.contains(currentIndex) else { return }
-            shelves[currentIndex].items = newValue
-        }
+    var items: [ShelfItem] { displayedItems(at: currentIndex) }
+
+    /// A shelf's own screenshots; Starred adds every starred one from elsewhere.
+    func displayedItems(at index: Int) -> [ShelfItem] {
+        guard shelves.indices.contains(index) else { return [] }
+        let shelf = shelves[index]
+        guard shelf.isStarredShelf else { return shelf.items }
+        let elsewhere = shelves.enumerated().filter { $0.offset != index }.flatMap { $0.element.items }
+        return shelf.items + elsewhere.filter(\.isStarred)
     }
+
+    var starredShelfIndex: Int? { shelves.firstIndex(where: \.isStarredShelf) }
+    /// Where screenshots go when they leave Starred: the first ordinary shelf.
+    private var homeShelfIndex: Int { shelves.firstIndex { !$0.isStarredShelf } ?? 0 }
     var current: Shelf { shelves.indices.contains(currentIndex) ? shelves[currentIndex] : shelves[0] }
     @Published var expanded: Bool = false
     @Published var hovering: Bool = false
     /// True while something droppable is dragged over the shelf.
     @Published var dropTargeted: Bool = false
-    /// Screenshots selected with ⌘-click on the expanded shelf.
+    /// The selected screenshots, as in Finder.
     @Published var selection: Set<UUID> = []
+    /// Where a shift-click range starts.
+    private var selectionAnchor: UUID?
+    /// Screenshots that were just copied, for a brief "Copied" badge.
+    @Published private(set) var justCopied: Set<UUID> = []
+    private var copyToken = 0
 
     static let stagingURL: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -116,9 +136,10 @@ final class ShelfStore: ObservableObject {
         return shelves.count - 1
     }
 
-    /// Only ever removes an empty shelf, and never the last one.
+    /// Only ever removes an empty shelf, never the last one, and never Starred.
     func removeShelf(at index: Int) {
-        guard shelves.count > 1, shelves.indices.contains(index), shelves[index].items.isEmpty else { return }
+        guard shelves.count > 1, shelves.indices.contains(index), shelves[index].items.isEmpty,
+              !shelves[index].isStarredShelf else { return }
         shelves.remove(at: index)
         currentIndex = min(currentIndex, shelves.count - 1)
     }
@@ -133,6 +154,11 @@ final class ShelfStore: ObservableObject {
 
     func move(_ moving: [ShelfItem], toShelf index: Int) {
         guard shelves.indices.contains(index) else { return }
+        // "Moving" to Starred stars them instead: they stay where they are too.
+        if shelves[index].isStarredShelf {
+            setStarred(moving, true)
+            return
+        }
         let ids = Set(moving.map(\.id))
         var moved: [ShelfItem] = []
         for shelfIndex in shelves.indices {
@@ -145,15 +171,37 @@ final class ShelfStore: ObservableObject {
         if allItems.isEmpty { expanded = false }
     }
 
+    // MARK: - Starring
+
+    func setStarred(_ targets: [ShelfItem], _ starred: Bool) {
+        let ids = Set(targets.map(\.id))
+        for shelfIndex in shelves.indices {
+            for itemIndex in shelves[shelfIndex].items.indices where ids.contains(shelves[shelfIndex].items[itemIndex].id) {
+                shelves[shelfIndex].items[itemIndex].isStarred = starred
+            }
+        }
+        // Something that only ever lived on Starred needs a home when unstarred.
+        if !starred, let starredIndex = starredShelfIndex {
+            let leaving = shelves[starredIndex].items.filter { ids.contains($0.id) }
+            if !leaving.isEmpty, homeShelfIndex != starredIndex {
+                shelves[starredIndex].items.removeAll { ids.contains($0.id) }
+                shelves[homeShelfIndex].items += leaving
+                if current.isStarredShelf { selection.subtract(ids) }
+            }
+        }
+    }
+
     // MARK: - Adding
 
     @discardableResult
     func add(_ url: URL, isReference: Bool = false) -> Bool {
         let url = url.standardizedFileURL
         guard !items.contains(where: { $0.url.standardizedFileURL == url }) else { return false }
-        guard let thumb = ShelfStore.thumbnail(for: url) else { return false }
-        items.append(ShelfItem(url: url, thumbnail: thumb, modified: ShelfStore.modificationDate(of: url),
-                               date: ShelfStore.date(of: url), isReference: isReference))
+        guard shelves.indices.contains(currentIndex), let thumb = ShelfStore.thumbnail(for: url) else { return false }
+        shelves[currentIndex].items.append(ShelfItem(
+            url: url, thumbnail: thumb, modified: ShelfStore.modificationDate(of: url),
+            date: ShelfStore.date(of: url), isReference: isReference,
+            isStarred: shelves[currentIndex].isStarredShelf))
         return true
     }
 
@@ -181,6 +229,37 @@ final class ShelfStore: ObservableObject {
 
     func toggleSelection(_ item: ShelfItem) {
         if selection.contains(item.id) { selection.remove(item.id) } else { selection.insert(item.id) }
+        selectionAnchor = item.id
+    }
+
+    /// A plain click: just this one.
+    func selectOnly(_ item: ShelfItem) {
+        selection = [item.id]
+        selectionAnchor = item.id
+    }
+
+    /// Shift-click: everything from the last clicked screenshot to this one.
+    func selectRange(to item: ShelfItem) {
+        let order = displayOrder.map(\.id)
+        guard let anchor = selectionAnchor, let from = order.firstIndex(of: anchor),
+              let to = order.firstIndex(of: item.id) else { return selectOnly(item) }
+        selection = Set(order[min(from, to)...max(from, to)])
+    }
+
+    func selectAll() { selection = Set(items.map(\.id)) }
+
+    /// The screenshots as they appear on the shelf, left to right, top to bottom.
+    var displayOrder: [ShelfItem] { groups.flatMap(\.items) }
+
+    var selectedItems: [ShelfItem] { displayOrder.filter { selection.contains($0.id) } }
+
+    /// Arrow keys: step through the screenshots.
+    func moveSelection(by offset: Int) {
+        let order = displayOrder
+        guard !order.isEmpty else { return }
+        let current = order.firstIndex { $0.id == (selectionAnchor ?? selection.first) }
+        let next = current.map { min(max($0 + offset, 0), order.count - 1) } ?? (offset > 0 ? 0 : order.count - 1)
+        selectOnly(order[next])
     }
 
     func clearSelection() {
@@ -225,13 +304,7 @@ final class ShelfStore: ObservableObject {
 
     /// Takes screenshots off every shelf, wherever they are.
     func disposeEverywhere(_ targets: [ShelfItem], action: DisposeAction) {
-        let ids = Set(targets.map(\.id))
-        let saved = currentIndex
-        for index in shelves.indices where shelves[index].items.contains(where: { ids.contains($0.id) }) {
-            currentIndex = index
-            dispose(shelves[index].items.filter { ids.contains($0.id) }, action: action)
-        }
-        currentIndex = min(saved, shelves.count - 1)
+        dispose(targets, action: action)
     }
 
     /// Takes screenshots off the shelf. Files that could not be saved or trashed
@@ -239,7 +312,8 @@ final class ShelfStore: ObservableObject {
     func dispose(_ targets: [ShelfItem], action: DisposeAction) {
         let failed = Set(targets.filter { !$0.isReference && !ShelfStore.dispose($0.url, action: action) }.map(\.id))
         let removed = Set(targets.map(\.id)).subtracting(failed)
-        items.removeAll { removed.contains($0.id) }
+        // A screenshot lives on exactly one shelf, but may be shown on Starred.
+        for index in shelves.indices { shelves[index].items.removeAll { removed.contains($0.id) } }
         selection.subtract(removed)
         // Only fold up once every shelf is empty; an empty shelf is still a place to go.
         if allItems.isEmpty { expanded = false }
@@ -267,12 +341,23 @@ final class ShelfStore: ObservableObject {
 
     func copy(_ targets: [ShelfItem]) {
         guard !targets.isEmpty else { return }
+        flashCopied(targets)
         if targets.count == 1 {
             ShelfStore.copyToPasteboard(targets[0].url)
         } else {
             let pb = NSPasteboard.general
             pb.clearContents()
             pb.writeObjects(targets.map { ScreenshotDragItem(url: $0.url) })
+        }
+    }
+
+    private func flashCopied(_ targets: [ShelfItem]) {
+        copyToken += 1
+        let token = copyToken
+        justCopied = Set(targets.map(\.id))
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            guard let self, token == self.copyToken else { return }
+            self.justCopied = []
         }
     }
 
@@ -290,12 +375,14 @@ final class ShelfStore: ObservableObject {
 
     /// Reloads thumbnails of files that changed, e.g. after editing in Preview.
     func refreshThumbnails() {
-        for index in items.indices {
-            let url = items[index].url
-            let modified = ShelfStore.modificationDate(of: url)
-            guard modified != items[index].modified, let thumb = ShelfStore.thumbnail(for: url) else { continue }
-            items[index].thumbnail = thumb
-            items[index].modified = modified
+        for shelfIndex in shelves.indices {
+            for itemIndex in shelves[shelfIndex].items.indices {
+                let item = shelves[shelfIndex].items[itemIndex]
+                let modified = ShelfStore.modificationDate(of: item.url)
+                guard modified != item.modified, let thumb = ShelfStore.thumbnail(for: item.url) else { continue }
+                shelves[shelfIndex].items[itemIndex].thumbnail = thumb
+                shelves[shelfIndex].items[itemIndex].modified = modified
+            }
         }
     }
 

@@ -1,11 +1,37 @@
 import AppKit
 import Combine
+import Quartz
 import SwiftUI
 
-/// A floating panel that never steals focus from the app you are working in.
+/// A floating panel that never activates ShotShelf. Clicking a screenshot does
+/// give it the keyboard, so space, ⌘C and friends work as in Finder.
 final class ShelfPanelWindow: NSPanel {
+    var keyHandler: ((NSEvent) -> Bool)?
+
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    override func keyDown(with event: NSEvent) {
+        if keyHandler?(event) != true { super.keyDown(with: event) }
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.modifierFlags.contains(.command), keyHandler?(event) == true { return true }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    // Quick Look finds its data source by walking the responder chain.
+    override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool { true }
+
+    override func beginPreviewPanelControl(_ panel: QLPreviewPanel!) {
+        panel.dataSource = ShelfQuickLook.shared
+        panel.delegate = ShelfQuickLook.shared
+    }
+
+    override func endPreviewPanelControl(_ panel: QLPreviewPanel!) {
+        panel.dataSource = nil
+        panel.delegate = nil
+    }
 }
 
 /// The size of the visible shelf inside its window. Changes of size are
@@ -273,6 +299,8 @@ final class ShelfController {
             onDragEnded: { [weak self] in self?.dragEnded() })
         let hosting = NSHostingView(rootView: ShelfRoot(frame: frameModel, shelf: root))
         hosting.frame = NSRect(origin: .zero, size: ShelfLayout.collapsed)
+        let keyboard = ShelfKeyboard(store: store)
+        panel.keyHandler = { keyboard.handle($0) }
         let dropView = ShelfDropView(store: store, content: hosting)
         dropView.onDropAccepted = { [weak self] in self?.droppedDuringReveal = true }
         panel.contentView = dropView

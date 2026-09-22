@@ -33,8 +33,10 @@ Requires macOS 13 or later. Universal build (Apple silicon and Intel).
 - **Select several** on the expanded shelf: ⌘-click them, or drag a
   Finder-style selection rectangle from empty space (or after briefly holding
   a screenshot). Hold ⌘ to add to the current selection. Dragging or any action on a selected screenshot applies to all of them.
-- **Click** a screenshot to copy it (a selection is copied as a whole), and
-  **double-click** to open it in Preview. Hovering enlarges it slightly and
+- **Click** a screenshot to select it, as in Finder (⌘-click adds, ⇧-click
+  selects a range). Then **space** opens Quick Look, **⌘C** copies, **⌘A**
+  selects all, **⌘⌫** moves to the Trash, **Escape** deselects and the arrow
+  keys step through. **Double-click** opens a screenshot in Preview. Hovering enlarges it slightly and
   shows a × that saves it to your folder, or trashes it if you prefer.
 - **Quick actions** (optional, in Settings): Copy and View buttons in the
   middle and Delete in the bottom-left on hover. You can still start a drag
@@ -65,6 +67,9 @@ middle shelf selected.
 
 - **Click** one to switch. The screenshots slide in from the side.
 - **Drag screenshots** onto one to move them there.
+- **Starred** collects: starring a screenshot (right-click › Add to Starred, or
+  drag it onto the star) keeps it on its own shelf and also shows it on
+  Starred, with a small star on it elsewhere.
 - **Drag the icons** themselves to reorder your shelves.
 - The shelf you're on is at full strength; the others are dimmed, and their
   emoji lose their colour.

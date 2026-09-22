@@ -23,10 +23,12 @@ enum ShelfStorage {
 
     // MARK: - On-disk shape
 
+    // Optionals are fields added in later versions, so older files still load.
     private struct StoredItem: Codable {
         var path: String
         var date: Date
         var isReference: Bool
+        var isStarred: Bool?
     }
 
     private struct StoredShelf: Codable {
@@ -34,6 +36,7 @@ enum ShelfStorage {
         var name: String
         var symbol: ShelfSymbol
         var items: [StoredItem]
+        var isStarredShelf: Bool?
     }
 
     private struct StoredLibrary: Codable {
@@ -43,19 +46,24 @@ enum ShelfStorage {
 
     private static func stored(_ shelf: Shelf) -> StoredShelf {
         StoredShelf(id: shelf.id, name: shelf.name, symbol: shelf.symbol,
-                    items: shelf.items.map { StoredItem(path: $0.url.path, date: $0.date, isReference: $0.isReference) })
+                    items: shelf.items.map {
+                        StoredItem(path: $0.url.path, date: $0.date, isReference: $0.isReference, isStarred: $0.isStarred)
+                    },
+                    isStarredShelf: shelf.isStarredShelf)
     }
 
     /// Rebuilds a shelf, skipping anything whose file has since disappeared.
     private static func shelf(from stored: StoredShelf) -> Shelf {
-        var shelf = Shelf(id: stored.id, name: stored.name, symbol: stored.symbol)
+        var shelf = Shelf(id: stored.id, name: stored.name, symbol: stored.symbol,
+                          isStarredShelf: stored.isStarredShelf ?? false)
         for entry in stored.items {
             let url = URL(fileURLWithPath: entry.path)
             guard FileManager.default.fileExists(atPath: url.path),
                   let thumbnail = ShelfStore.thumbnail(for: url) else { continue }
             shelf.items.append(ShelfItem(url: url, thumbnail: thumbnail,
                                          modified: ShelfStore.modificationDate(of: url),
-                                         date: entry.date, isReference: entry.isReference))
+                                         date: entry.date, isReference: entry.isReference,
+                                         isStarred: entry.isStarred ?? shelf.isStarredShelf))
         }
         return shelf
     }
@@ -87,6 +95,13 @@ enum ShelfStorage {
             defaults[ShelfStore.defaultIndex].items = shelves[0].items
             shelves = defaults
             index = ShelfStore.defaultIndex
+        }
+        // Before Starred collected starred screenshots it was an ordinary shelf
+        // called "Starred"; give it its role, and star what's on it.
+        if !shelves.contains(where: \.isStarredShelf),
+           let index = shelves.firstIndex(where: { $0.name == "Starred" || $0.symbol == .symbol("star.fill") }) {
+            shelves[index].isStarredShelf = true
+            for itemIndex in shelves[index].items.indices { shelves[index].items[itemIndex].isStarred = true }
         }
         // Three shelves is the starting point, so top up anything short of it.
         while shelves.count < ShelfStore.defaultShelves().count {

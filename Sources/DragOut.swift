@@ -116,6 +116,10 @@ final class DragOutNSView: NSView, NSDraggingSource {
     /// The panel is never active; without this the first click would only focus it.
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    /// Clicking a screenshot hands the keyboard to the shelf (space, ⌘C, …)
+    /// without bringing ShotShelf to the front.
+    override var needsPanelToBecomeKey: Bool { true }
+
     override func menu(for event: NSEvent) -> NSMenu? { menuProvider?() }
 
     /// Pop the menu up ourselves: a real macOS menu in its own window at the
@@ -287,6 +291,8 @@ final class SelectionCanvasNSView: NSView {
     private var selecting = false
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override var needsPanelToBecomeKey: Bool { true }
 
     override func menu(for event: NSEvent) -> NSMenu? { menuProvider?() }
 

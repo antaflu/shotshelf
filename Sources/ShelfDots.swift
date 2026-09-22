@@ -253,7 +253,7 @@ private struct ShelfDot: View {
             )
             .animation(.easeOut(duration: 0.14), value: backgroundOpacity)
             .animation(.easeOut(duration: 0.18), value: isCurrent)
-            .help("\(shelf.name) — \(shelf.items.count == 1 ? "1 item" : "\(shelf.items.count) items")")
+            .help(helpText)
             .popover(isPresented: $choosingIcon, arrowEdge: .bottom) {
                 ShelfIconPicker(symbol: shelf.symbol) { symbol in
                     guard store.shelves.indices.contains(index) else { return }
@@ -295,16 +295,27 @@ private struct ShelfDot: View {
         }
     }
 
+    private var helpText: String {
+        let count = store.displayedItems(at: index).count
+        let items = count == 1 ? "1 item" : "\(count) items"
+        return shelf.isStarredShelf ? "\(shelf.name) — \(items), starred from all shelves" : "\(shelf.name) — \(items)"
+    }
+
     private func menu() -> NSMenu {
         let menu = NSMenu()
         menu.addAction("Change Shelf Icon…") { choosingIcon = true }
         menu.addAction("Rename…") { draft = shelf.name; renaming = true }
         menu.addItem(.separator())
         menu.addAction("New Shelf", enabled: store.canAddShelf) { store.select(store.addShelf()) }
-        menu.addAction("Save Shelf…") { onSave(shelf) }
+        menu.addAction("Save Shelf…") {
+            // Starred saves everything it shows, not just what was put there.
+            var saving = shelf
+            saving.items = store.displayedItems(at: index)
+            onSave(saving)
+        }
         menu.addAction("Open Shelf…") { onOpen() }
         menu.addItem(.separator())
-        menu.addAction("Delete Shelf", enabled: store.shelves.count > 1 && shelf.items.isEmpty) {
+        menu.addAction("Delete Shelf", enabled: store.shelves.count > 1 && shelf.items.isEmpty && !shelf.isStarredShelf) {
             store.removeShelf(at: index)
         }
         return menu
