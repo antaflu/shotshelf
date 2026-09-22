@@ -29,7 +29,8 @@ enum ShelfLayout {
     static func size(expanded: Bool, groups: [ShelfGroup]) -> CGSize {
         guard expanded else { return collapsed }
         let showTitles = groups.count > 1
-        var content: CGFloat = 0
+        // An empty shelf keeps one row's worth of room for its placeholder.
+        var content: CGFloat = groups.isEmpty ? tile : 0
         for (index, group) in groups.enumerated() {
             if index > 0 { content += gap }
             if showTitles { content += groupHeader + gap }
@@ -111,7 +112,7 @@ struct ShelfView: View {
             Color.black
                 .opacity(store.hovering ? 0.10 : 0)
                 .allowsHitTesting(false)
-            if store.isEmpty {
+            if store.isEmpty && !store.expanded {
                 emptyContent
             } else if store.expanded {
                 expandedContent
@@ -189,11 +190,12 @@ struct ShelfView: View {
                 .frame(width: 34, height: 34)
                 .foregroundColor(.secondary)
             VStack(spacing: 2) {
-                Text(store.dropTargeted ? "Drop to keep it here" : "No screenshots yet")
+                Text(store.dropTargeted ? "Drop to keep it here"
+                     : (store.allItems.isEmpty ? "No screenshots yet" : "This shelf is empty"))
                     .font(.system(size: 10, weight: .medium))
                     .foregroundColor(.secondary)
                 if !store.dropTargeted {
-                    Text("Drag images here")
+                    Text(store.allItems.isEmpty ? "Drag images here" : "Click to see your shelves")
                         .font(.system(size: 9))
                         .foregroundColor(.secondary.opacity(0.7))
                 }
@@ -201,6 +203,7 @@ struct ShelfView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
+        .onTapGesture { expand() }
         .gesture(swipe)
         .overlay(alignment: .bottomTrailing) { settingsButton.padding(8) }
     }
@@ -219,6 +222,7 @@ struct ShelfView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 let groups = store.groups
                 VStack(alignment: .leading, spacing: ShelfLayout.gap) {
+                    if groups.isEmpty { emptyShelfPlaceholder }
                     ForEach(groups) { group in
                         VStack(alignment: .leading, spacing: ShelfLayout.gap) {
                             // Only worth labelling when there is more than one day on the shelf.
@@ -292,6 +296,23 @@ struct ShelfView: View {
         }
         .help("Collapse")
         .gesture(swipe)
+    }
+
+    /// What an empty shelf shows while it's open, so the header and the other
+    /// shelves stay in reach.
+    private var emptyShelfPlaceholder: some View {
+        VStack(spacing: 4) {
+            Text("Nothing on \(store.current.name) yet")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.secondary)
+            Text("Take a screenshot, drop images here, or right-click to paste")
+                .font(.system(size: 9.5))
+                .foregroundColor(.secondary.opacity(0.7))
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: ShelfLayout.tile)
+        .allowsHitTesting(false)
     }
 
     private var selectionCanvas: some View {

@@ -43,16 +43,6 @@ final class ShelfController {
             .sink { [weak self] _ in self?.layout(animated: true) }
             .store(in: &cancellables)
 
-        // Switching to an empty shelf must not make the shelf vanish. This runs
-        // straight away, before the layout pass that would otherwise hide it.
-        store.$currentIndex
-            .dropFirst()
-            .sink { [weak self] _ in
-                guard let self, self.isVisible else { return }
-                self.allowEmpty = true
-            }
-            .store(in: &cancellables)
-
         revealWatcher.onReveal = { [weak self] in self?.revealForDrop() }
         revealWatcher.onDragEnded = { [weak self] in self?.dragRevealEnded() }
         revealWatcher.start()
@@ -88,7 +78,7 @@ final class ShelfController {
 
     func show(allowEmpty: Bool = false) {
         if allowEmpty { self.allowEmpty = true }
-        guard !store.isEmpty || self.allowEmpty else { return }
+        guard !store.allItems.isEmpty || self.allowEmpty else { return }
         let panel = self.panel ?? makePanel()
 
         if isVisible {
@@ -273,8 +263,8 @@ final class ShelfController {
 
     private func layout(animated: Bool) {
         guard let panel, panel.isVisible, dragOrigin == nil, !slidingOut else { return }
-        if !store.isEmpty { allowEmpty = false }
-        if store.isEmpty && !allowEmpty {
+        if !store.allItems.isEmpty { allowEmpty = false }
+        if store.allItems.isEmpty && !allowEmpty {
             panel.orderOut(nil)
             store.hovering = false
             return

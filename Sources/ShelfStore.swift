@@ -96,6 +96,12 @@ final class ShelfStore: ObservableObject {
     /// Which way the screenshots slide when the shelf changes.
     private(set) var switchedForward = true
 
+    /// Opening the app always starts on the middle shelf.
+    func selectStartShelf() {
+        currentIndex = min(ShelfStore.defaultIndex, shelves.count - 1)
+        selection.removeAll()
+    }
+
     func select(_ index: Int) {
         guard shelves.indices.contains(index), index != currentIndex else { return }
         selection.removeAll()
@@ -135,7 +141,8 @@ final class ShelfStore: ObservableObject {
         }
         shelves[index].items += moved
         selection.subtract(ids)
-        if items.isEmpty { expanded = false }
+        // Only fold up once every shelf is empty; an empty shelf is still a place to go.
+        if allItems.isEmpty { expanded = false }
     }
 
     // MARK: - Adding
@@ -234,7 +241,8 @@ final class ShelfStore: ObservableObject {
         let removed = Set(targets.map(\.id)).subtracting(failed)
         items.removeAll { removed.contains($0.id) }
         selection.subtract(removed)
-        if items.isEmpty { expanded = false }
+        // Only fold up once every shelf is empty; an empty shelf is still a place to go.
+        if allItems.isEmpty { expanded = false }
     }
 
     /// True when the file is gone from the shelf's point of view: saved,

@@ -35,7 +35,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ShelfStorage.load(into: controller.store)
         adoptLooseFiles()
         watcher.start()
-        if !controller.store.isEmpty { controller.show() }
+        controller.store.selectStartShelf()
+        if !controller.store.allItems.isEmpty {
+            // The middle shelf may be empty; open it up so the other shelves are in reach.
+            if controller.store.isEmpty { controller.store.expanded = true }
+            controller.show()
+        }
 
         Publishers.Merge3(
             settings.$showDockIcon.map { _ in () },
