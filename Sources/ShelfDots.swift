@@ -76,8 +76,15 @@ final class ShelfDotView: NSView, NSDraggingSource {
                                        owner: self))
     }
 
-    override func mouseEntered(with event: NSEvent) { onHover(NSEvent.pressedMouseButtons == 0) }
-    override func mouseExited(with event: NSEvent) { onHover(false) }
+    private lazy var hoverWatch = HoverWatch(view: self, ignoreWhilePressed: true) { [weak self] in
+        self?.onHover($0)
+    }
+
+    override func mouseEntered(with event: NSEvent) { hoverWatch.entered() }
+    override func mouseExited(with event: NSEvent) { hoverWatch.exited() }
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil { hoverWatch.exited() }
+    }
 
     override func menu(for event: NSEvent) -> NSMenu? { menuProvider?() }
 

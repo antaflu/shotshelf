@@ -145,9 +145,18 @@ final class DragOutNSView: NSView, NSDraggingSource {
     }
 
     // Passing over tiles while dragging or selecting shouldn't pop up their buttons.
+    private lazy var hoverWatch = HoverWatch(view: self, ignoreWhilePressed: true) { [weak self] hovering in
+        self?.onHover(hovering)
+        if !hovering { self?.onHotspotHover(nil) }
+    }
+
     override func mouseEntered(with event: NSEvent) {
-        onHover(NSEvent.pressedMouseButtons == 0)
+        hoverWatch.entered()
         onHotspotHover(hotspot(at: event.locationInWindow))
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil { hoverWatch.exited() }
     }
 
     override func mouseMoved(with event: NSEvent) {
@@ -155,8 +164,7 @@ final class DragOutNSView: NSView, NSDraggingSource {
     }
 
     override func mouseExited(with event: NSEvent) {
-        onHover(false)
-        onHotspotHover(nil)
+        hoverWatch.exited()
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -177,7 +185,7 @@ final class DragOutNSView: NSView, NSDraggingSource {
     private func beginSelecting(additive: Bool, event: NSEvent) {
         guard mode == .pending, itemID != nil else { return }
         mode = .selecting
-        onHover(false)
+        hoverWatch.exited()
         selection.began(additive)
         selection.update(from: mouseDownAt, to: event)
     }

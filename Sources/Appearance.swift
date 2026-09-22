@@ -1,6 +1,61 @@
 import AppKit
 import SwiftUI
 
+/// Keeps a view's hover state honest. Entered/exited events alone can go
+/// missing: when the shelf resizes or moves under a pointer that's standing
+/// still, or a window goes away. So while a view believes it's hovered, it
+/// checks every so often where the pointer really is.
+final class HoverWatch {
+    private weak var view: NSView?
+    private let ignoreWhilePressed: Bool
+    private let onChange: (Bool) -> Void
+    private var timer: Timer?
+    private(set) var isHovering = false
+
+    init(view: NSView, ignoreWhilePressed: Bool, onChange: @escaping (Bool) -> Void) {
+        self.view = view
+        self.ignoreWhilePressed = ignoreWhilePressed
+        self.onChange = onChange
+    }
+
+    deinit { timer?.invalidate() }
+
+    var pointerInside: Bool {
+        guard let view, let window = view.window, window.isVisible, !view.isHiddenOrHasHiddenAncestor else {
+            return false
+        }
+        let point = view.convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        return view.bounds.contains(point)
+    }
+
+    private var buttonHeld: Bool { ignoreWhilePressed && NSEvent.pressedMouseButtons != 0 }
+
+    func entered() { set(pointerInside && !buttonHeld) }
+    func exited() { set(false) }
+
+    private func set(_ hovering: Bool) {
+        if hovering { startChecking() } else { stopChecking() }
+        guard hovering != isHovering else { return }
+        isHovering = hovering
+        onChange(hovering)
+    }
+
+    private func startChecking() {
+        guard timer == nil else { return }
+        let timer = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            if !self.pointerInside || self.buttonHeld { self.set(false) }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
+    private func stopChecking() {
+        timer?.invalidate()
+        timer = nil
+    }
+}
+
 /// Reports whether the pointer is over a view. Works even when ShotShelf is not
 /// the active app (SwiftUI's onHover is unreliable in a non-activating panel),
 /// and never swallows clicks itself.
@@ -21,8 +76,15 @@ struct HoverTracker: NSViewRepresentable {
                 owner: self))
         }
 
-        override func mouseEntered(with event: NSEvent) { onChange(true) }
-        override func mouseExited(with event: NSEvent) { onChange(false) }
+        private lazy var watch = HoverWatch(view: self, ignoreWhilePressed: false) { [weak self] in
+            self?.onChange($0)
+        }
+
+        override func mouseEntered(with event: NSEvent) { watch.entered() }
+        override func mouseExited(with event: NSEvent) { watch.exited() }
+        override func viewWillMove(toWindow newWindow: NSWindow?) {
+            if newWindow == nil { watch.exited() }
+        }
     }
 
     func makeNSView(context: Context) -> TrackingView {
