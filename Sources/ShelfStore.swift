@@ -136,18 +136,19 @@ final class ShelfStore: ObservableObject {
         return shelves.count - 1
     }
 
-    /// Starred doesn't count: Starred, Shelf 1, Shelf 2, …
+    /// Numbers run over the shelves that still carry an automatic name, so
+    /// Starred and shelves you named yourself don't take a number.
     static func nextShelfName(in shelves: [Shelf]) -> String {
-        "Shelf \(shelves.filter { !$0.isStarredShelf }.count + 1)"
+        "Shelf \(shelves.filter { !$0.isStarredShelf && isDefaultName($0.name) }.count + 1)"
     }
 
     /// Keeps the automatic names in order (Shelf 1, Shelf 2, …) after shelves
     /// were added, removed or reordered. Names you gave yourself are left alone.
     static func renumberDefaultNames(_ shelves: inout [Shelf]) {
         var number = 0
-        for index in shelves.indices where !shelves[index].isStarredShelf {
+        for index in shelves.indices where !shelves[index].isStarredShelf && isDefaultName(shelves[index].name) {
             number += 1
-            if isDefaultName(shelves[index].name) { shelves[index].name = "Shelf \(number)" }
+            shelves[index].name = "Shelf \(number)"
         }
     }
 
@@ -383,19 +384,19 @@ final class ShelfStore: ObservableObject {
         }
     }
 
-    func openInPreview(_ targets: [ShelfItem]) {
-        let urls = targets.map(\.url)
-        guard !urls.isEmpty else { return }
-        let configuration = NSWorkspace.OpenConfiguration()
-        configuration.activates = true
-        if let preview = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Preview") {
-            NSWorkspace.shared.open(urls, withApplicationAt: preview, configuration: configuration)
-        } else {
-            urls.forEach { NSWorkspace.shared.open($0) }
-        }
+    /// Opens Quick Look, the same panel the space bar gives you.
+    /// Replaceable so tests don't put a panel on screen.
+    var quickLookHandler: ([URL], Bool) -> Void = { urls, toggle in
+        toggle ? ShelfQuickLook.shared.toggle(urls) : ShelfQuickLook.shared.show(urls)
     }
 
-    /// Reloads thumbnails of files that changed, e.g. after editing in Preview.
+    func quickLook(_ targets: [ShelfItem], toggle: Bool = false) {
+        let urls = targets.map(\.url)
+        guard !urls.isEmpty else { return }
+        quickLookHandler(urls, toggle)
+    }
+
+    /// Reloads thumbnails of files that changed, e.g. after an edit elsewhere.
     func refreshThumbnails() {
         for shelfIndex in shelves.indices {
             for itemIndex in shelves[shelfIndex].items.indices {
@@ -408,7 +409,7 @@ final class ShelfStore: ObservableObject {
         }
     }
 
-    /// Newest date wins: a screenshot edited in Preview stays where you expect it.
+    /// Newest date wins: an edited screenshot stays where you expect it.
     static func date(of url: URL) -> Date {
         let values = try? url.resourceValues(forKeys: [.creationDateKey, .contentModificationDateKey])
         return values?.creationDate ?? values?.contentModificationDate ?? Date()

@@ -36,7 +36,7 @@ Requires macOS 13 or later. Universal build (Apple silicon and Intel).
 - **Click** a screenshot to select it, as in Finder (⌘-click adds, ⇧-click
   selects a range). Then **space** opens Quick Look, **⌘C** copies, **⌘A**
   selects all, **⌘⌫** moves to the Trash, **Escape** deselects and the arrow
-  keys step through. **Double-click** opens a screenshot in Preview. Hovering enlarges it slightly and
+  keys step through. **Double-click** opens Quick Look too. Hovering enlarges it slightly and
   shows a × that saves it to your folder, or trashes it if you prefer.
 - **Quick actions** (optional, in Settings): Copy and View buttons in the
   middle and Delete in the bottom-left on hover. You can still start a drag
@@ -82,7 +82,7 @@ shelf yourself are kept.
 The icon picker has every emoji macOS can draw plus a few hundred symbols, with
 a search field; the bin button clears the icon again.
 
-Right-click a screenshot for Copy, Open in Preview, Save, Delete, and Move to
+Right-click a screenshot for Copy, Quick Look, Save, Delete, and Move to
 Shelf. Right-click an empty part of the shelf to paste an image or a file from
 the clipboard.
 
@@ -145,6 +145,17 @@ To publish a new version:
 
 This builds the DMG, writes a checksum, tags and pushes, and uploads both
 files as a GitHub release.
+
+## Tests
+
+```
+./test.sh
+```
+
+Builds and runs the suites in `Tests/` against the app's own sources: the
+shelves and starring, the keyboard and Quick Look, the layout, the corner
+gestures, the panel's behaviour, and the mouse interactions (driven with
+synthetic clicks and drags).
 
 ## Building
 

@@ -10,11 +10,17 @@ final class ShelfQuickLook: NSObject, QLPreviewPanelDataSource, QLPreviewPanelDe
 
     var isOpen: Bool { QLPreviewPanel.sharedPreviewPanelExists() && QLPreviewPanel.shared().isVisible }
 
+    /// Space: open, or close it again.
     func toggle(_ urls: [URL]) {
         if isOpen {
             QLPreviewPanel.shared().orderOut(nil)
             return
         }
+        show(urls)
+    }
+
+    /// Clicking View or double-clicking: always show these screenshots.
+    func show(_ urls: [URL]) {
         guard !urls.isEmpty, let panel = QLPreviewPanel.shared() else { return }
         self.urls = urls
         panel.makeKeyAndOrderFront(nil)
@@ -33,7 +39,7 @@ final class ShelfQuickLook: NSObject, QLPreviewPanelDataSource, QLPreviewPanelDe
 /// clears the selection and the arrow keys step through the screenshots.
 struct ShelfKeyboard {
     let store: ShelfStore
-    var quickLook: ([URL]) -> Void = { ShelfQuickLook.shared.toggle($0) }
+
 
     /// True when the key was used, so it isn't passed on.
     func handle(_ event: NSEvent) -> Bool {
@@ -44,7 +50,7 @@ struct ShelfKeyboard {
         switch (Int(event.keyCode), flags) {
         case (kVK_Space, []):
             guard !selected.isEmpty else { return false }
-            quickLook(selected.map(\.url))
+            store.quickLook(selected, toggle: true)
         case (kVK_ANSI_C, [.command]):
             guard !selected.isEmpty else { return false }
             store.copy(selected)

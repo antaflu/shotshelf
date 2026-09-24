@@ -74,7 +74,7 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.segmented)
                 Toggle("Show Copy, View and Delete on hover", isOn: $settings.hoverQuickActions)
-                Text("Clicking a screenshot always copies it. Double-click opens it in Preview.")
+                Text("Clicking a screenshot selects it. Space or a double-click opens Quick Look, ⌘C copies.")
                     .font(.caption).foregroundColor(.secondary)
                 Toggle("Show when dragging images to its corner", isOn: $settings.revealOnDrag)
                 Toggle("Turn off the macOS preview thumbnail", isOn: $settings.hideSystemPreview)

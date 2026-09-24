@@ -129,7 +129,7 @@ struct ShelfView: View {
         .animation(.easeOut(duration: 0.18), value: store.dropTargeted)
         .background(HoverTracker { inside in
             store.hovering = inside
-            if inside { store.refreshThumbnails() } // picks up edits made in Preview
+            if inside { store.refreshThumbnails() } // picks up edits made elsewhere
         })
         .animation(.easeOut(duration: 0.2), value: store.hovering)
         .clipShape(RoundedRectangle(cornerRadius: ShelfLayout.corner, style: .continuous))
@@ -430,7 +430,7 @@ private struct ShelfTile: View {
         case Spot.copy:
             copy()
         case Spot.view:
-            store.openInPreview(targets)
+            store.quickLook(targets)
         case Spot.delete:
             store.dispose(targets, action: .trash)
         case Spot.close:
@@ -504,7 +504,7 @@ private struct ShelfTile: View {
                 DragOutArea(
                     items: { targets.map { (url: $0.url, image: $0.thumbnail) } },
                     onClick: { click($0) },
-                    onDoubleClick: { store.openInPreview([item]) },
+                    onDoubleClick: { store.quickLook(targets) },
                     onHover: { hovering = $0 },
                     hotspots: { hotspots(in: $0) },
                     onHotspotClick: { perform($0) },
@@ -543,7 +543,7 @@ private struct ShelfTile: View {
         let menu = NSMenu()
         let picked = targets
         menu.addAction(describe("Copy")) { store.copy(picked) }
-        menu.addAction(describe("Open in Preview")) { store.openInPreview(picked) }
+        menu.addAction(describe("Quick Look")) { store.quickLook(picked) }
         menu.addItem(.separator())
         if store.starredShelfIndex != nil {
             let allStarred = picked.allSatisfy(\.isStarred)
@@ -578,7 +578,7 @@ private struct ShelfTile: View {
     private var helpText: String {
         switch hoveredSpot {
         case Spot.copy?: return describe("Copy")
-        case Spot.view?: return describe("Open in Preview")
+        case Spot.view?: return describe("Quick Look")
         case Spot.delete?: return describe("Move to Trash")
         case Spot.close?:
             if item.isReference { return "Remove from shelf (the original stays where it is)" }
@@ -588,7 +588,7 @@ private struct ShelfTile: View {
         default:
             let name = item.isReference ? "\(item.url.lastPathComponent) — \(item.url.deletingLastPathComponent().path)"
                                         : item.url.lastPathComponent
-            return "\(name)\nClick to select · Space to preview · ⌘C to copy · double-click to open"
+            return "\(name)\nClick to select · Space or double-click for Quick Look · ⌘C to copy"
         }
     }
 
