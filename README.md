@@ -12,19 +12,25 @@ screenshots move to your save folder (the Desktop by default).
 
 ## Install
 
-Download the latest DMG from
-[Releases](https://github.com/antaflu/shotshelf/releases), open it and drag
-ShotShelf to Applications. Launch it once; from then on you only see a small
-stack icon in the menu bar.
+Download `ShotShelf-<version>.dmg` from
+[Releases](https://github.com/antaflu/shotshelf/releases/latest) and open it.
 
-ShotShelf is ad-hoc signed, not notarized. The first time, macOS may block it:
-right-click the app and choose **Open**, or run
+1. Drag **ShotShelf** to **Applications**.
+2. ShotShelf is signed ad-hoc, not notarised by Apple, so macOS blocks a
+   downloaded copy. Clear that once in Terminal:
 
-```
-xattr -dr com.apple.quarantine /Applications/ShotShelf.app
-```
+   ```
+   xattr -dr com.apple.quarantine /Applications/ShotShelf.app
+   ```
+
+   Without this you get "ShotShelf is damaged and can't be opened". Nothing is
+   damaged: macOS simply won't run apps it hasn't checked with Apple.
+3. Open ShotShelf from Applications. There's no window; look for the stack icon
+   in the menu bar.
 
 Requires macOS 13 or later. Universal build (Apple silicon and Intel).
+
+Every release carries the same steps in a `Read me first.txt` inside the DMG.
 
 ## Working with screenshots
 

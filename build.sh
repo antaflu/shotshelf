@@ -99,6 +99,23 @@ STAGE="$BUILD/dmg"
 mkdir -p "$STAGE"
 cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
+# ShotShelf isn't notarised, so a downloaded copy needs its quarantine flag
+# cleared. Ship the instructions next to the app.
+cat > "$STAGE/Read me first.txt" <<'TXT'
+ShotShelf
+
+1. Drag ShotShelf to the Applications folder on the right.
+
+2. macOS blocks apps it hasn't checked with Apple, and ShotShelf isn't
+   notarised, so run this once in Terminal:
+
+       xattr -dr com.apple.quarantine /Applications/ShotShelf.app
+
+3. Open ShotShelf from Applications. It has no window: look for the small
+   stack icon in the menu bar. Take a screenshot and the shelf appears.
+
+Updates arrive by themselves from github.com/antaflu/shotshelf
+TXT
 hdiutil create -volname "$NAME" -srcfolder "$STAGE" -ov -format UDZO \
   -quiet "$BUILD/$NAME-$VERSION.dmg"
 rm -rf "$STAGE"
